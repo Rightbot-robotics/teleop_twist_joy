@@ -1,16 +1,14 @@
 teleop_twist_joy_node:
   ros__parameters:
-    axis_linear:  # Left thumb stick vertical
-      x: 1
+    axis_linear:
+      x: 1 #left thumbstick vertical
+      y: 0 #left thumbstick horizontal
     scale_linear:
-      x: 0.7
-    scale_linear_turbo:
-      x: 1.5
-
-    axis_angular:  # Left thumb stick horizontal
-      yaw: 0
+      x: 0.4
+      y: 0.4
+    axis_angular:
+      yaw: 3 #right thumbstick horizontal
     scale_angular:
-      yaw: 0.4
-
-    enable_button: 2  # Left trigger button
-    enable_turbo_button: 5  # Right trigger button
+      yaw: 0.5
+    enable_button: 5
+    enable_turbo_button: 2
