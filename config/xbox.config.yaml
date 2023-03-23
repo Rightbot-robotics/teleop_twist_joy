@@ -18,5 +18,8 @@ teleop_twist_joy_node:
     enable_button: 7  # RB shoulder button
     enable_turbo_button: 6  # LB shoulder button
 
-    acceleration_limit: 0.1
-    deceleration_limit: 0.1
+    linear_acceleration_limit: 0.2
+    linear_deceleration_limit: 0.1
+
+    angular_acceleration_limit: 0.08
+    angular_deceleration_limit: 0.08
