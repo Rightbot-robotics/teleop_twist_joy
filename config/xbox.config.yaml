@@ -4,8 +4,8 @@ teleop_twist_joy_node:
       x: 1  #left thumbstick vertical
       y: 0  #left thumbstick horizontal
     scale_linear:
-      x: 0.7
-      y: 0.7
+      x: 1.0
+      y: 1.0
     scale_linear_turbo:
       x: 1.5
       y: 1.5
@@ -18,5 +18,5 @@ teleop_twist_joy_node:
     enable_button: 7  # RB shoulder button
     enable_turbo_button: 6  # LB shoulder button
 
-    acceleration_limit: 0.8
-    deceleration_limit: 0.8
+    acceleration_limit: 0.1
+    deceleration_limit: 0.1
