@@ -52,6 +52,8 @@ struct TeleopTwistJoy::Impl
 {
   void joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy);
   void sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr, const std::string& which_map);
+  rclcpp::Time to_rclcpp_time(const std_msgs::msg::Header::_stamp_type& stamp);
+  double calculateNewVelocity(double velocity_setpoint, double dt, double last_velocity, double accel_limit, double decel_limit);
 
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
@@ -65,8 +67,18 @@ struct TeleopTwistJoy::Impl
 
   std::map<std::string, int64_t> axis_angular_map;
   std::map<std::string, std::map<std::string, double>> scale_angular_map;
-
+  double linear_acceleration_limit;
+  double linear_deceleration_limit;
+  double angular_acceleration_limit;
+  double angular_deceleration_limit;
   bool sent_disable_msg;
+  
+  std::map<std::string, double> last_linear_vel;
+  std::map<std::string, double> last_angular_vel;
+  rclcpp::Time last_joy_time;
+  double last_joy_val_x;
+  double last_joy_val_y;
+  double last_joy_val_yaw;
 };
 
 /**
@@ -134,6 +146,13 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   this->declare_parameters("scale_angular_turbo", default_scale_angular_turbo_map);
   this->get_parameters("scale_angular_turbo", pimpl_->scale_angular_map["turbo"]);
 
+  pimpl_->linear_acceleration_limit = this->declare_parameter("linear_acceleration_limit", 0.4);
+  pimpl_->linear_deceleration_limit = this->declare_parameter("linear_deceleration_limit", 0.4);
+  pimpl_->angular_acceleration_limit = this->declare_parameter("angular_acceleration_limit", 0.4);
+  pimpl_->angular_deceleration_limit = this->declare_parameter("angular_deceleration_limit", 0.4);
+  
+  
+
   ROS_INFO_COND_NAMED(pimpl_->require_enable_button, "TeleopTwistJoy",
       "Teleop enable button %" PRId64 ".", pimpl_->enable_button);
   ROS_INFO_COND_NAMED(pimpl_->enable_turbo_button >= 0, "TeleopTwistJoy",
@@ -168,7 +187,9 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
     static std::set<std::string> doubleparams = {"scale_linear.x", "scale_linear.y", "scale_linear.z",
                                                  "scale_linear_turbo.x", "scale_linear_turbo.y", "scale_linear_turbo.z",
                                                  "scale_angular.yaw", "scale_angular.pitch", "scale_angular.roll",
-                                                 "scale_angular_turbo.yaw", "scale_angular_turbo.pitch", "scale_angular_turbo.roll"};
+                                                 "scale_angular_turbo.yaw", "scale_angular_turbo.pitch", "scale_angular_turbo.roll",
+                                                 "linear_acceleration_limit", "linear_deceleration_limit",
+                                                 "angular_acceleration_limit", "angular_deceleration_limit"};
     static std::set<std::string> boolparams = {"require_enable_button"};
     auto result = rcl_interfaces::msg::SetParametersResult();
     result.successful = true;
@@ -295,6 +316,22 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
       {
         this->pimpl_->scale_angular_map["normal"]["roll"] = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
       }
+      else if (parameter.get_name() == "linear_acceleration_limit")
+      {
+        this->pimpl_->linear_acceleration_limit = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
+      }
+      else if (parameter.get_name() == "linear_deceleration_limit")
+      {
+        this->pimpl_->linear_deceleration_limit = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
+      }
+      else if (parameter.get_name() == "angular_acceleration_limit")
+      {
+        this->pimpl_->angular_acceleration_limit = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
+      }
+      else if (parameter.get_name() == "angular_deceleration_limit")
+      {
+        this->pimpl_->angular_deceleration_limit = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
+      }
     }
     return result;
   };
@@ -307,18 +344,29 @@ TeleopTwistJoy::~TeleopTwistJoy()
   delete pimpl_;
 }
 
-double getVal(const sensor_msgs::msg::Joy::SharedPtr joy_msg, const std::map<std::string, int64_t>& axis_map,
-              const std::map<std::string, double>& scale_map, const std::string& fieldname)
-{
-  if (axis_map.find(fieldname) == axis_map.end() ||
-      axis_map.at(fieldname) == -1L ||
-      scale_map.find(fieldname) == scale_map.end() ||
-      static_cast<int>(joy_msg->axes.size()) <= axis_map.at(fieldname))
-  {
-    return 0.0;
-  }
+double TeleopTwistJoy::Impl::calculateNewVelocity(double velocity_setpoint, double dt, double last_velocity, double accel_limit, double decel_limit) {
+    double max_acceleration = accel_limit * dt;
+    double max_deceleration = decel_limit * dt;
+    double error = velocity_setpoint - last_velocity;
+    double new_velocity = last_velocity;
 
-  return joy_msg->axes[axis_map.at(fieldname)] * scale_map.at(fieldname);
+    if (error > 0) { // Need to accelerate
+        double acceleration = std::min(error, max_acceleration);
+        new_velocity += acceleration;
+    }
+    else if (error < 0) { // Need to decelerate
+        double deceleration = std::min(-error, max_deceleration);
+        new_velocity -= deceleration;
+    }
+
+    return new_velocity;
+}
+
+
+// Convert a std_msgs::msg::Header::_stamp_type to rclcpp::Time
+rclcpp::Time TeleopTwistJoy::Impl::to_rclcpp_time(const std_msgs::msg::Header::_stamp_type& stamp)
+{
+  return rclcpp::Time(stamp.sec, stamp.nanosec);
 }
 
 void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr joy_msg,
@@ -327,16 +375,31 @@ void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr 
   // Initializes with zeros by default.
   auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
 
-  cmd_vel_msg->linear.x = getVal(joy_msg, axis_linear_map, scale_linear_map[which_map], "x");
-  cmd_vel_msg->linear.y = getVal(joy_msg, axis_linear_map, scale_linear_map[which_map], "y");
-  cmd_vel_msg->linear.z = getVal(joy_msg, axis_linear_map, scale_linear_map[which_map], "z");
-  cmd_vel_msg->angular.z = getVal(joy_msg, axis_angular_map, scale_angular_map[which_map], "yaw");
-  cmd_vel_msg->angular.y = getVal(joy_msg, axis_angular_map, scale_angular_map[which_map], "pitch");
-  cmd_vel_msg->angular.x = getVal(joy_msg, axis_angular_map, scale_angular_map[which_map], "roll");
+  const double dt = (to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_joy_time)).seconds();
+
+  // // Compute the new linear velocities
+  double joy_val = joy_msg->axes[axis_linear_map.at("x")];
+  double velocity_setpoint = joy_val * scale_linear_map[which_map].at("x");
+  cmd_vel_msg->linear.x = calculateNewVelocity(velocity_setpoint, dt, last_linear_vel["x"], linear_acceleration_limit, linear_deceleration_limit);
+  last_linear_vel["x"] = cmd_vel_msg->linear.x;
+  
+  joy_val = joy_msg->axes[axis_linear_map.at("y")];
+  velocity_setpoint = joy_val * scale_linear_map[which_map].at("y");
+  cmd_vel_msg->linear.y = calculateNewVelocity(velocity_setpoint, dt, last_linear_vel["y"], linear_acceleration_limit, linear_deceleration_limit);
+  last_linear_vel["y"] = cmd_vel_msg->linear.y;
+
+  // Compute the new angular velocities
+  joy_val = joy_msg->axes[axis_angular_map.at("yaw")];
+  velocity_setpoint = joy_val * scale_angular_map[which_map].at("yaw");
+  cmd_vel_msg->angular.z = calculateNewVelocity(velocity_setpoint, dt, last_angular_vel["yaw"], angular_acceleration_limit, angular_deceleration_limit);
+  last_angular_vel["yaw"] = cmd_vel_msg->angular.z;
+
 
   cmd_vel_pub->publish(std::move(cmd_vel_msg));
   sent_disable_msg = false;
+  last_joy_time = joy_msg->header.stamp;
 }
+
 
 void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy_msg)
 {
@@ -354,15 +417,12 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
   }
   else
   {
-    // When enable button is released, immediately send a single no-motion command
+    // When enable button is released, send no-motion commands
     // in order to stop the robot.
-    if (!sent_disable_msg)
-    {
-      // Initializes with zeros by default.
-      auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
-      cmd_vel_pub->publish(std::move(cmd_vel_msg));
-      sent_disable_msg = true;
-    }
+
+    // Initializes with zeros by default.
+    auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
+    cmd_vel_pub->publish(std::move(cmd_vel_msg));
   }
 }
 
