@@ -18,7 +18,7 @@ teleop_twist_joy_node:
     axis_joint:
       x: 1                                    # Left thumbstick vertical
     scale_joint: 
-      x: 0.8 
+      x: 0.8
     scale_joint_turbo:
       x: 1.0
 
