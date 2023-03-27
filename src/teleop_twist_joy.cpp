@@ -661,7 +661,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
         }
         const std::string joint = joint_names[joint_index];
         ROS_INFO_COND_NAMED(prev_joint_button > 0, "SherlockTeleopJoy",
-        ("Now controlling joint:" + joint).c_str());
+        ("Now controlling joint: " + joint).c_str());
       }
 
       last_prev_joint_execution_time = joy_msg->header.stamp;
@@ -684,7 +684,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
         }
         const std::string joint = joint_names[joint_index];
         ROS_INFO_COND_NAMED(next_joint_button > 0, "SherlockTeleopJoy",
-        ("Now controlling joint:" + joint).c_str());
+        ("Now controlling joint: " + joint).c_str());
       }
 
       last_next_joint_execution_time = joy_msg->header.stamp;
