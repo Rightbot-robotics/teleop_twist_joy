@@ -34,6 +34,8 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include <rclcpp_components/register_node_macro.hpp>
 #include <rcutils/logging_macros.h>
 #include <sensor_msgs/msg/joy.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
+
 
 #include "teleop_twist_joy/teleop_twist_joy.hpp"
 
@@ -52,33 +54,74 @@ struct TeleopTwistJoy::Impl
 {
   void joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy);
   void sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr, const std::string& which_map);
+  void sendJointPoseMsg(const sensor_msgs::msg::Joy::SharedPtr, const std::string& which_map, std::string joint_name, bool gripper);
+  double capValue(double value, int64_t position);
+
   rclcpp::Time to_rclcpp_time(const std_msgs::msg::Header::_stamp_type& stamp);
   double calculateNewVelocity(double velocity_setpoint, double dt, double last_velocity, double accel_limit, double decel_limit);
 
+  double calculateNewPosition(double position_setpoint, double dt, double last_position, double velocity_limit);
+
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
+  rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pose_pub;
 
   bool require_enable_button;
+
+  // Store all buttons
   int64_t enable_button;
   int64_t enable_turbo_button;
+  int64_t enable_mode_button;
+  int64_t enable_gripper_button;
+  int64_t prev_joint_button;
+  int64_t next_joint_button;
 
+  // Store current state
+  bool mode;
+  bool gripper;
+  bool sent_disable_msg;
+  int64_t joint_index;
+
+  // Store all axes and their scales
   std::map<std::string, int64_t> axis_linear_map;
   std::map<std::string, std::map<std::string, double>> scale_linear_map;
 
   std::map<std::string, int64_t> axis_angular_map;
   std::map<std::string, std::map<std::string, double>> scale_angular_map;
+
+  std::map<std::string, int64_t> axis_joint_map;
+  std::map<std::string, std::map<std::string, double>> scale_joint_map;
+
+  // Store joint names and their limits
+  std::vector<std::string> joint_names;
+  std::vector<double> joint_limits_min;
+  std::vector<double> joint_limits_max;
+
+  // Store all limits
   double linear_acceleration_limit;
   double linear_deceleration_limit;
+
   double angular_acceleration_limit;
   double angular_deceleration_limit;
-  bool sent_disable_msg;
-  
-  std::map<std::string, double> last_linear_vel;
-  std::map<std::string, double> last_angular_vel;
+
+  double joint_velocity_limit;
+
+  // Store last execution times
+  rclcpp::Time last_mode_execution_time;
+  rclcpp::Time last_gripper_execution_time;
+  rclcpp::Time last_prev_joint_execution_time;
+  rclcpp::Time last_next_joint_execution_time;
   rclcpp::Time last_joy_time;
+
+  // Store prev state 
   double last_joy_val_x;
   double last_joy_val_y;
   double last_joy_val_yaw;
+  double last_joy_val_joint;
+
+  std::map<std::string, double> last_linear_vel;
+  std::map<std::string, double> last_angular_vel;
+  std::map<std::string, double> last_joint_pose;
 };
 
 /**
@@ -89,14 +132,21 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   pimpl_ = new Impl;
 
   pimpl_->cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
+
   pimpl_->joy_sub = this->create_subscription<sensor_msgs::msg::Joy>("joy", rclcpp::QoS(10),
     std::bind(&TeleopTwistJoy::Impl::joyCallback, this->pimpl_, std::placeholders::_1));
+
+  pimpl_->joint_pose_pub = this->create_publisher<sensor_msgs::msg::JointState>("joint_pose_joy", 10);
 
   pimpl_->require_enable_button = this->declare_parameter("require_enable_button", true);
 
   pimpl_->enable_button = this->declare_parameter("enable_button", 5);
-
   pimpl_->enable_turbo_button = this->declare_parameter("enable_turbo_button", -1);
+  pimpl_->enable_mode_button = this->declare_parameter("enable_mode_button", 12);
+  pimpl_->enable_gripper_button = this->declare_parameter("enable_gripper_button", 0);
+  pimpl_->prev_joint_button = this->declare_parameter("prev_joint_button", 3);
+  pimpl_->next_joint_button = this->declare_parameter("next_joint_button", 1);
+
 
   std::map<std::string, int64_t> default_linear_map{
     {"x", 5L},
@@ -114,6 +164,14 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   this->declare_parameters("axis_angular", default_angular_map);
   this->get_parameters("axis_angular", pimpl_->axis_angular_map);
 
+  std::map<std::string, int64_t> default_joint_map{
+    {"x", 5L},
+    {"y", -1L},
+    {"z", -1L},
+  };
+  this->declare_parameters("axis_joint", default_joint_map);
+  this->get_parameters("axis_joint", pimpl_->axis_joint_map);
+
   std::map<std::string, double> default_scale_linear_normal_map{
     {"x", 0.5},
     {"y", 0.0},
@@ -122,6 +180,14 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   this->declare_parameters("scale_linear", default_scale_linear_normal_map);
   this->get_parameters("scale_linear", pimpl_->scale_linear_map["normal"]);
 
+  std::map<std::string, double> default_scale_joint_normal_map{
+    {"x", 0.5},
+    {"y", 0.0},
+    {"z", 0.0},
+  };
+  this->declare_parameters("scale_joint", default_scale_joint_normal_map);
+  this->get_parameters("scale_joint", pimpl_->scale_joint_map["normal"]);
+
   std::map<std::string, double> default_scale_linear_turbo_map{
     {"x", 1.0},
     {"y", 0.0},
@@ -129,6 +195,14 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   };
   this->declare_parameters("scale_linear_turbo", default_scale_linear_turbo_map);
   this->get_parameters("scale_linear_turbo", pimpl_->scale_linear_map["turbo"]);
+
+std::map<std::string, double> default_scale_joint_turbo_map{
+    {"x", 1.0},
+    {"y", 0.0},
+    {"z", 0.0},
+  };
+  this->declare_parameters("scale_joint_turbo", default_scale_joint_turbo_map);
+  this->get_parameters("scale_joint_turbo", pimpl_->scale_joint_map["turbo"]);
 
   std::map<std::string, double> default_scale_angular_normal_map{
     {"yaw", 0.5},
@@ -146,35 +220,53 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   this->declare_parameters("scale_angular_turbo", default_scale_angular_turbo_map);
   this->get_parameters("scale_angular_turbo", pimpl_->scale_angular_map["turbo"]);
 
+  std::vector<std::string> default_joint_names{
+      "base_rotation_joint"   ,
+      "camera_rotation_joint" ,
+      "elbow_rotation_joint"  , 
+      "h_gantry_joint"        ,     
+      "rotation1_joint"       ,     
+      "rotation2_joint"       ,      
+      "v_gantry_joint"        ,       
+      "wrist_rotation_joint" };
+  pimpl_->joint_names = this->declare_parameter("joint_names", default_joint_names);
+
+  std::vector<double> default_joint_limits_min{
+      -3.14,
+      -3.14,
+      -2.61,
+        0.0,
+      -1.57,
+      -3.14,
+        0.0,
+      -3.14 };
+  pimpl_->joint_limits_min = this->declare_parameter("joint_limits_min", default_joint_limits_min);
+
+  std::vector<double> default_joint_limits_max{
+      3.14 ,
+      3.14 ,
+      2.61 ,
+      0.75 ,
+      1.57 ,
+      3.14 ,
+      1.061,
+      3.14 };
+  pimpl_->joint_limits_max = this->declare_parameter("joint_limits_max", default_joint_limits_max);
+
   pimpl_->linear_acceleration_limit = this->declare_parameter("linear_acceleration_limit", 0.4);
   pimpl_->linear_deceleration_limit = this->declare_parameter("linear_deceleration_limit", 0.4);
   pimpl_->angular_acceleration_limit = this->declare_parameter("angular_acceleration_limit", 0.4);
   pimpl_->angular_deceleration_limit = this->declare_parameter("angular_deceleration_limit", 0.4);
+  pimpl_->joint_velocity_limit = this->declare_parameter("joint_velocity_limit", 0.4);
+
+  ROS_INFO_COND_NAMED(pimpl_->require_enable_button, "SherlockTeleopJoy",
+    "Teleop enable button: RB");
   
-  
+  ROS_INFO_COND_NAMED(pimpl_->enable_turbo_button >= 0, "SherlockTeleopJoy",
+    "Turbo button: LB");
 
-  ROS_INFO_COND_NAMED(pimpl_->require_enable_button, "TeleopTwistJoy",
-      "Teleop enable button %" PRId64 ".", pimpl_->enable_button);
-  ROS_INFO_COND_NAMED(pimpl_->enable_turbo_button >= 0, "TeleopTwistJoy",
-    "Turbo on button %" PRId64 ".", pimpl_->enable_turbo_button);
-
-  for (std::map<std::string, int64_t>::iterator it = pimpl_->axis_linear_map.begin();
-       it != pimpl_->axis_linear_map.end(); ++it)
-  {
-    ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "Linear axis %s on %" PRId64 " at scale %f.",
-      it->first.c_str(), it->second, pimpl_->scale_linear_map["normal"][it->first]);
-    ROS_INFO_COND_NAMED(pimpl_->enable_turbo_button >= 0 && it->second != -1, "TeleopTwistJoy",
-      "Turbo for linear axis %s is scale %f.", it->first.c_str(), pimpl_->scale_linear_map["turbo"][it->first]);
-  }
-
-  for (std::map<std::string, int64_t>::iterator it = pimpl_->axis_angular_map.begin();
-       it != pimpl_->axis_angular_map.end(); ++it)
-  {
-    ROS_INFO_COND_NAMED(it->second != -1L, "TeleopTwistJoy", "Angular axis %s on %" PRId64 " at scale %f.",
-      it->first.c_str(), it->second, pimpl_->scale_angular_map["normal"][it->first]);
-    ROS_INFO_COND_NAMED(pimpl_->enable_turbo_button >= 0 && it->second != -1, "TeleopTwistJoy",
-      "Turbo for angular axis %s is scale %f.", it->first.c_str(), pimpl_->scale_angular_map["turbo"][it->first]);
-  }
+  ROS_INFO_COND_NAMED(pimpl_->enable_mode_button >= 0, "SherlockTeleopJoy",
+    "Teleop mode switch button: XBOX");
 
   pimpl_->sent_disable_msg = false;
 
@@ -183,13 +275,15 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   {
     static std::set<std::string> intparams = {"axis_linear.x", "axis_linear.y", "axis_linear.z",
                                               "axis_angular.yaw", "axis_angular.pitch", "axis_angular.roll",
-                                              "enable_button", "enable_turbo_button"};
+                                              "enable_button", "enable_turbo_button", "enable_mode_button", "enable_gripper_button",
+                                              "prev_joint_button", "next_joint_button", "axis_joint.x"};
     static std::set<std::string> doubleparams = {"scale_linear.x", "scale_linear.y", "scale_linear.z",
                                                  "scale_linear_turbo.x", "scale_linear_turbo.y", "scale_linear_turbo.z",
                                                  "scale_angular.yaw", "scale_angular.pitch", "scale_angular.roll",
                                                  "scale_angular_turbo.yaw", "scale_angular_turbo.pitch", "scale_angular_turbo.roll",
                                                  "linear_acceleration_limit", "linear_deceleration_limit",
-                                                 "angular_acceleration_limit", "angular_deceleration_limit"};
+                                                 "angular_acceleration_limit", "angular_deceleration_limit",
+                                                 "joint_velocity_limit", "scale_joint.x", "scale_joint_turbo.x"};
     static std::set<std::string> boolparams = {"require_enable_button"};
     auto result = rcl_interfaces::msg::SetParametersResult();
     result.successful = true;
@@ -243,6 +337,22 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
       else if (parameter.get_name() == "enable_turbo_button")
       {
         this->pimpl_->enable_turbo_button = parameter.get_value<rclcpp::PARAMETER_INTEGER>();
+      }
+      else if (parameter.get_name() == "enable_mode_button")
+      {
+        this->pimpl_->enable_mode_button = parameter.get_value<rclcpp::PARAMETER_INTEGER>();
+      }
+      else if (parameter.get_name() == "enable_gripper_button")
+      {
+        this->pimpl_->enable_gripper_button = parameter.get_value<rclcpp::PARAMETER_INTEGER>();
+      }
+      else if (parameter.get_name() == "prev_joint_button")
+      {
+        this->pimpl_->prev_joint_button = parameter.get_value<rclcpp::PARAMETER_INTEGER>();
+      }
+      else if (parameter.get_name() == "next_joint_button")
+      {
+        this->pimpl_->next_joint_button = parameter.get_value<rclcpp::PARAMETER_INTEGER>();
       }
       else if (parameter.get_name() == "axis_linear.x")
       {
@@ -320,6 +430,18 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
       {
         this->pimpl_->linear_acceleration_limit = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
       }
+      else if (parameter.get_name() == "axis_ljoint.x")
+      {
+        this->pimpl_->axis_joint_map["x"] = parameter.get_value<rclcpp::PARAMETER_INTEGER>();
+      }
+      else if (parameter.get_name() == "scale_joint.x")
+      {
+        this->pimpl_->scale_joint_map["normal"]["x"] = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
+      }
+      else if (parameter.get_name() == "scale_joint_turbo.x")
+      {
+        this->pimpl_->scale_joint_map["turbo"]["x"] = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
+      }
       else if (parameter.get_name() == "linear_deceleration_limit")
       {
         this->pimpl_->linear_deceleration_limit = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
@@ -332,6 +454,26 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
       {
         this->pimpl_->angular_deceleration_limit = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
       }
+      else if (parameter.get_name() == "joint_velocity_limit")
+      {
+        this->pimpl_->joint_velocity_limit = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
+      }
+      else if (parameter.get_name() == "joint_names")
+      {
+        this->pimpl_->joint_names = parameter.get_value<rclcpp::PARAMETER_STRING_ARRAY>();
+      }
+      else if (parameter.get_name() == "joint_limits_min")
+      {
+        this->pimpl_->joint_limits_min = parameter.get_value<rclcpp::PARAMETER_DOUBLE_ARRAY>();
+      }
+      else if (parameter.get_name() == "joint_limits_max")
+      {
+        this->pimpl_->joint_limits_max = parameter.get_value<rclcpp::PARAMETER_DOUBLE_ARRAY>();
+      }
+    }
+    for (const std::string & joint_name : this->pimpl_->joint_names)
+    {
+    this->pimpl_->last_joint_pose[joint_name] = 0.0;
     }
     return result;
   };
@@ -344,30 +486,54 @@ TeleopTwistJoy::~TeleopTwistJoy()
   delete pimpl_;
 }
 
-double TeleopTwistJoy::Impl::calculateNewVelocity(double velocity_setpoint, double dt, double last_velocity, double accel_limit, double decel_limit) {
-    double max_acceleration = accel_limit * dt;
-    double max_deceleration = decel_limit * dt;
-    double error = velocity_setpoint - last_velocity;
-    double new_velocity = last_velocity;
+double TeleopTwistJoy::Impl::calculateNewVelocity(double velocity_setpoint, double dt, double last_velocity, double accel_limit, double decel_limit)
+{
+  double max_acceleration = accel_limit * dt;
+  double max_deceleration = decel_limit * dt;
+  double error = velocity_setpoint - last_velocity;
+  double new_velocity = last_velocity;
 
-    if (error > 0) { // Need to accelerate
-        double acceleration = std::min(error, max_acceleration);
-        new_velocity += acceleration;
-    }
-    else if (error < 0) { // Need to decelerate
-        double deceleration = std::min(-error, max_deceleration);
-        new_velocity -= deceleration;
-    }
+  if (error > 0) 
+  { // Need to accelerate
+    double acceleration = std::min(error, max_acceleration);
+    new_velocity += acceleration;
+  }
+  else if (error < 0) 
+  { // Need to decelerate
+    double deceleration = std::min(-error, max_deceleration);
+    new_velocity -= deceleration;
+  }
 
-    return new_velocity;
+  return new_velocity;
+}
+
+double TeleopTwistJoy::Impl::calculateNewPosition(double position_setpoint, double dt, double last_position, double velocity_limit)
+{
+  double max_velocity = velocity_limit * dt;
+  double error = position_setpoint - last_position;
+  double new_position = last_position;
+
+  if (error > 0)
+  {
+    double velocity = std::min(error, max_velocity);
+    new_position += velocity;
+  }
+  else if (error < 0)
+  {
+    double velocity = std::min(-error, max_velocity);
+    new_position -= velocity;
+  }
+
+  return new_position;
 }
 
 
-// Convert a std_msgs::msg::Header::_stamp_type to rclcpp::Time
 rclcpp::Time TeleopTwistJoy::Impl::to_rclcpp_time(const std_msgs::msg::Header::_stamp_type& stamp)
 {
+  // Convert a std_msgs::msg::Header::_stamp_type to rclcpp::Time
   return rclcpp::Time(stamp.sec, stamp.nanosec);
 }
+
 
 void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr joy_msg,
                                          const std::string& which_map)
@@ -400,29 +566,236 @@ void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr 
   last_joy_time = joy_msg->header.stamp;
 }
 
+double TeleopTwistJoy::Impl::capValue(double value, int64_t position)
+{
+  if(value > joint_limits_max[position])
+  {
+    return joint_limits_max[position];
+  }
+  else if (value < joint_limits_min[position])
+  {
+    return joint_limits_min[position];
+  }
+  return value;
+}
+
+void TeleopTwistJoy::Impl::sendJointPoseMsg(const sensor_msgs::msg::Joy::SharedPtr joy_msg,
+                                         const std::string& which_map, std::string joint_name, bool gripper)
+{
+  // x axis to increase or decrease position slowly using the same logic.
+  auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
+  joint_pose_msg->header.stamp = joy_msg->header.stamp;
+
+  const double dt = (to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_joy_time)).seconds();
+
+  double joy_val = joy_msg->axes[axis_joint_map.at("x")];
+
+  ptrdiff_t pos1 = distance(joint_names.begin(), find(joint_names.begin(), joint_names.end(), joint_name));
+
+  double position_setpoint =  last_joint_pose[joint_name] + joy_val * (std::abs(joint_limits_min[pos1]) + std::abs(joint_limits_max[pos1])) * scale_joint_map[which_map].at("x");;   
+
+  double new_pose = capValue(calculateNewPosition(position_setpoint, dt, last_joint_pose[joint_name], joint_velocity_limit), pos1);
+
+  joint_pose_msg->name = joint_names;
+  joint_pose_msg->name.push_back("gripper");
+  joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  std::map<std::string, double>::iterator it;
+  for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
+  { 
+    ptrdiff_t pos = distance(joint_names.begin(), find(joint_names.begin(), joint_names.end(), it->first));
+    joint_pose_msg->position[pos] = it->second;
+  }
+  double gripper_val = gripper? 1.0:0.0;
+  joint_pose_msg->position.push_back(gripper_val);
+  joint_pose_pub->publish(std::move(joint_pose_msg));
+
+  last_joint_pose[joint_name] = new_pose;
+  last_joy_time = joy_msg->header.stamp;
+}
+
 
 void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy_msg)
-{
-  if (enable_turbo_button >= 0 &&
-      static_cast<int>(joy_msg->buttons.size()) > enable_turbo_button &&
-      joy_msg->buttons[enable_turbo_button])
+{ 
+  if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_mode_execution_time)).seconds() >= 0.5)
   {
-    sendCmdVelMsg(joy_msg, "turbo");
+  
+    if (enable_mode_button >= 0 && 
+      static_cast<int>(joy_msg->buttons.size()) > enable_mode_button &&
+      joy_msg->buttons[enable_mode_button])
+    {
+      mode = !mode;
+      if (mode)
+      {
+        ROS_INFO_COND_NAMED(enable_mode_button > 0, "SherlockTeleopJoy",
+        "Controlling Sherlock manipulator now.");
+
+        ROS_INFO_COND_NAMED(enable_gripper_button >= 0, "SherlockTeleopJoy",
+        "Gripper toggle button: A");
+      }
+      else
+      {
+        ROS_INFO_COND_NAMED(enable_mode_button > 0, "SherlockTeleopJoy",
+        "Controlling Sherlock base now.");
+      }
+        
+    }
+
+  last_mode_execution_time = joy_msg->header.stamp;
+
   }
-  else if (!require_enable_button ||
-	   (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
-           joy_msg->buttons[enable_button]))
+  
+  if(!mode)
   {
-    sendCmdVelMsg(joy_msg, "normal");
+    if (enable_turbo_button >= 0 &&
+        static_cast<int>(joy_msg->buttons.size()) > enable_turbo_button &&
+        joy_msg->buttons[enable_turbo_button])
+    {
+      sendCmdVelMsg(joy_msg, "turbo");
+    }
+    else if (!require_enable_button ||
+      (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
+            joy_msg->buttons[enable_button]))
+    {
+      sendCmdVelMsg(joy_msg, "normal");
+    }
+    else
+    {
+      // When enable button is released, send no-motion commands
+      // in order to stop the robot.
+
+      // Initializes with zeros by default.
+      auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
+
+
+      joint_pose_msg->header.stamp = joy_msg->header.stamp;
+      joint_pose_msg->name = joint_names;
+      joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      std::map<std::string, double>::iterator it;
+      for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
+      { 
+        ptrdiff_t pos = distance(joint_names.begin(), find(joint_names.begin(), joint_names.end(), it->first));
+        joint_pose_msg->position[pos] = it->second;
+      }
+      joint_pose_pub->publish(std::move(joint_pose_msg));
+      // When enable button is released, send no-motion commands
+      // in order to stop the robot.
+
+      // Initializes with zeros by default.
+      auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
+      cmd_vel_pub->publish(std::move(cmd_vel_msg));
+    }
   }
   else
   {
-    // When enable button is released, send no-motion commands
-    // in order to stop the robot.
+    // get X/B to choose joint and send apt joint_name
+    if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_prev_joint_execution_time)).seconds() >= 0.5)
+    {
+  
+      if (prev_joint_button >= 0 && 
+        static_cast<int>(joy_msg->buttons.size()) > prev_joint_button &&
+        joy_msg->buttons[prev_joint_button])
+      { 
+        if(joint_index == 0)
+        {
+          joint_index = static_cast<int>(joint_names.size()) - 1;
+        }
+        else
+        {
+          --joint_index;
+        }
+        const std::string joint = joint_names[joint_index];
+        ROS_INFO_COND_NAMED(prev_joint_button > 0, "SherlockTeleopJoy",
+        ("Now controlling joint: " + joint).c_str());
+      }
 
-    // Initializes with zeros by default.
-    auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
-    cmd_vel_pub->publish(std::move(cmd_vel_msg));
+      last_prev_joint_execution_time = joy_msg->header.stamp;
+    }
+
+    if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_next_joint_execution_time)).seconds() >= 0.5)
+    {
+  
+      if (next_joint_button >= 0 && 
+        static_cast<int>(joy_msg->buttons.size()) > next_joint_button &&
+        joy_msg->buttons[next_joint_button])
+      { 
+         if(joint_index == static_cast<int>(joint_names.size()) - 1)
+        {
+          joint_index = 0;
+        }
+        else
+        {
+          ++joint_index;
+        }
+        const std::string joint = joint_names[joint_index];
+        ROS_INFO_COND_NAMED(next_joint_button > 0, "SherlockTeleopJoy",
+        ("Now controlling joint: " + joint).c_str());
+      }
+
+      last_next_joint_execution_time = joy_msg->header.stamp;
+    }
+
+    // get A button as toggle switch to send bool gripper command
+    if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_gripper_execution_time)).seconds() >= 0.5)
+    {
+  
+      if (enable_gripper_button >= 0 && 
+          static_cast<int>(joy_msg->buttons.size()) > enable_gripper_button &&
+          joy_msg->buttons[enable_gripper_button])
+      {
+          gripper = !gripper;
+          if (gripper)
+          {
+            ROS_INFO_COND_NAMED(enable_gripper_button > 0, "SherlockTeleopJoy",
+            "Gripper ON.");
+          }
+          else
+          {
+            ROS_INFO_COND_NAMED(enable_gripper_button > 0, "SherlockTeleopJoy",
+            "Gripper OFF.");
+          } 
+      }
+
+    last_gripper_execution_time = joy_msg->header.stamp;
+
+    }
+    if (enable_turbo_button >= 0 &&
+        static_cast<int>(joy_msg->buttons.size()) > enable_turbo_button &&
+        joy_msg->buttons[enable_turbo_button])
+    {
+      sendJointPoseMsg(joy_msg, "turbo", joint_names[joint_index], gripper);
+    }
+    else if (!require_enable_button ||
+      (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
+            joy_msg->buttons[enable_button]))
+    {
+      sendJointPoseMsg(joy_msg, "normal", joint_names[joint_index], gripper);
+    }
+    else
+    {
+      // When enable button is released, send no-motion commands
+      // in order to stop the manipulator.
+
+      // Initializes with zeros by default.
+      auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
+
+
+      joint_pose_msg->header.stamp = joy_msg->header.stamp;
+      joint_pose_msg->name = joint_names;
+      joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      std::map<std::string, double>::iterator it;
+      for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
+      { 
+        ptrdiff_t pos = distance(joint_names.begin(), find(joint_names.begin(), joint_names.end(), it->first));
+        joint_pose_msg->position[pos] = it->second;
+      }
+      joint_pose_pub->publish(std::move(joint_pose_msg));
+      // When enable button is released, send no-motion commands
+      // in order to stop the robot.
+
+      // Initializes with zeros by default.
+      auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
+      cmd_vel_pub->publish(std::move(cmd_vel_msg));
+    }
   }
 }
 

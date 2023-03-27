@@ -4,8 +4,8 @@ teleop_twist_joy_node:
       x: 1                                    # Left thumbstick vertical
       y: 0                                    # Left thumbstick horizontal
     scale_linear:
-      x: 1
-      y: 1
+      x: 1.0
+      y: 1.0
     scale_linear_turbo:
       x: 1.5
       y: 1.5
@@ -15,71 +15,65 @@ teleop_twist_joy_node:
     scale_angular:
       yaw: 0.4
 
+    axis_joint:
+      x: 1                                    # Left thumbstick vertical
+    scale_joint: 
+      x: 0.8
+    scale_joint_turbo:
+      x: 1.0
+
     enable_button: 7                          # RB shoulder button
     enable_turbo_button: 6                    # LB shoulder button
+    enable_mode_button: 12                    # XBOX logo button
+    enable_gripper_button: 0                  # A button
+    prev_joint_button: 3                      # X button
+    next_joint_button: 1                      # B button
 
     linear_acceleration_limit: 0.2
     linear_deceleration_limit: 0.1
-
     angular_acceleration_limit: 0.08
     angular_deceleration_limit: 0.08
+    joint_velocity_limit: 0.8
 
-    mode_button: 10
+    # joints: 
+    #   # NAMES                       MIN, MAX
+    #   "base_rotation_joint"   : [ -3.14, 3.14  ]
+    #   "camera_rotation_joint" : [ -3.14, 3.14  ]
+    #   "elbow_rotation_joint"  : [ -2.61, 2.61  ] 
+    #   "h_gantry_joint"        : [   0.0, 0.75  ]
+    #   "rotation1_joint"       : [ -1.57, 1.57  ]
+    #   "rotation2_joint"       : [ -3.14, 3.14  ]
+    #   "v_gantry_joint"        : [   0.0, 1.061 ]
+    #   "wrist_rotation_joint"  : [ -3.14, 3.14  ]
+    joint_names: [
+      "base_rotation_joint"   ,
+      "camera_rotation_joint" ,
+      "elbow_rotation_joint"  , 
+      "h_gantry_joint"        ,     
+      "rotation1_joint"       ,     
+      "rotation2_joint"       ,      
+      "v_gantry_joint"        ,       
+      "wrist_rotation_joint" 
+    ]
 
-    manipulator:
-      joint_names: [
-        "h_gantry_joint",       
-        "base_rotation_joint",  
-        "camera_rotation_joint",
-        "v_gantry_joint",       
-        "elbow_rotation_joint", 
-        "wrist_rotation_joint", 
-        "rotation1_joint",      
-        "rotatioin2_joint",     
-        ]
-
-      joint_limits_min: [
+    joint_limits_min: [
+      -3.14,
+      -3.14,
+      -2.61,
         0.0,
-        -3.14,
-        -3.14,
+      -1.57,
+      -3.14,
         0.0,
-        -2.61,
-        -3.14,
-        -1.57,
-        -3.14
-        ]
+      -3.14
+    ]
 
-      joint_limits_max: [
-        0.75,
-        3.14,
-        3.14,
-        1.061,
-        2.61,
-        3.14,
-        1.57,
-        3.14
-        ]
-      
-      prev_joint_switch_button: 3               # X button
-      next_joint_switch_button: 1               # B button
-      end_effector_button: 0                    # A button
-
-      axis_control:
-        x: 1                           # Left thumbstick vertical
-      scale_linear: 
-        x: 0.8
-      scale_linear_turbo:
-        x: 0.4
-      
-      acceleration_limit: 0.8
-      deceleration_limit: 0.8
-
-# h_gantry_joint,            prismatic,            0 - 0.75
-# base_rotation_joint,       revolute,         -3.14 - 3.14
-# camera_rotation_joint,     revolute,         -3.14 - 3.14
-# v_gantry_joint,            prismatic,            0 - 1.061
-# elbow_rotation_joint,      revolute,         -2.61 - 2.61
-# wrist_rotation_joint,      revolute,         -3.14 - 3.14 
-# rotation1_joint,           revolute,         -1.57 - 1.57
-# rotatioin2_joint,          revolute,         -3.14 - 3.14
-# gripper,                   bool,                 0 / 1
+    joint_limits_max: [
+      3.14 ,
+      3.14 ,
+      2.61 ,
+      0.75 ,
+      1.57 ,
+      3.14 ,
+      1.061,
+      3.14 
+    ]
