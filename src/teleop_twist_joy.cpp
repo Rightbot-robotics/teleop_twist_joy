@@ -597,7 +597,7 @@ void TeleopTwistJoy::Impl::sendJointPoseMsg(const sensor_msgs::msg::Joy::SharedP
   double new_pose = capValue(calculateNewPosition(position_setpoint, dt, last_joint_pose[joint_name], joint_velocity_limit), pos1);
 
   joint_pose_msg->name = joint_names;
-  joint_pose_msg->name.push_back("gripper");
+  // joint_pose_msg->name.push_back("gripper");
   joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   std::map<std::string, double>::iterator it;
   for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
