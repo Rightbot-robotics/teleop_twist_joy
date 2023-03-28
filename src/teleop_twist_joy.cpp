@@ -136,7 +136,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   pimpl_->joy_sub = this->create_subscription<sensor_msgs::msg::Joy>("joy", rclcpp::QoS(10),
     std::bind(&TeleopTwistJoy::Impl::joyCallback, this->pimpl_, std::placeholders::_1));
 
-  pimpl_->joint_pose_pub = this->create_publisher<sensor_msgs::msg::JointState>("joint_pose_joy", 10);
+  pimpl_->joint_pose_pub = this->create_publisher<sensor_msgs::msg::JointState>("joint_states", 10);
 
   pimpl_->require_enable_button = this->declare_parameter("require_enable_button", true);
 
@@ -598,7 +598,7 @@ void TeleopTwistJoy::Impl::sendJointPoseMsg(const sensor_msgs::msg::Joy::SharedP
 
   joint_pose_msg->name = joint_names;
   joint_pose_msg->name.push_back("gripper");
-  joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   std::map<std::string, double>::iterator it;
   for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
   { 
@@ -606,7 +606,7 @@ void TeleopTwistJoy::Impl::sendJointPoseMsg(const sensor_msgs::msg::Joy::SharedP
     joint_pose_msg->position[pos] = it->second;
   }
   double gripper_val = gripper? 1.0:0.0;
-  joint_pose_msg->position.push_back(gripper_val);
+  // joint_pose_msg->position.push_back(gripper_val);
   joint_pose_pub->publish(std::move(joint_pose_msg));
 
   last_joint_pose[joint_name] = new_pose;
@@ -669,7 +669,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
 
       joint_pose_msg->header.stamp = joy_msg->header.stamp;
       joint_pose_msg->name = joint_names;
-      joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
       std::map<std::string, double>::iterator it;
       for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
       { 
@@ -781,7 +781,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
 
       joint_pose_msg->header.stamp = joy_msg->header.stamp;
       joint_pose_msg->name = joint_names;
-      joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
       std::map<std::string, double>::iterator it;
       for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
       { 
