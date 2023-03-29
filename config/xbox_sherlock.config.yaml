@@ -13,7 +13,7 @@ teleop_twist_joy_node:
     axis_angular:
       yaw: 2                                  # Right thumbstick horizontal
     scale_angular:
-      yaw: 1.0
+      yaw: 0.0 # 1.0 disabled temporarily
 
     axis_joint:
       x: 1                                    # Left thumbstick vertical
