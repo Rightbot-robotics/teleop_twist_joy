@@ -4,16 +4,16 @@ teleop_twist_joy_node:
       x: 1                                    # Left thumbstick vertical
       y: 0                                    # Left thumbstick horizontal
     scale_linear:
+      x: 0.5
+      y: 0.5
+    scale_linear_turbo:
       x: 1.0
       y: 1.0
-    scale_linear_turbo:
-      x: 1.5
-      y: 1.5
 
     axis_angular:
       yaw: 2                                  # Right thumbstick horizontal
     scale_angular:
-      yaw: 0.4
+      yaw: 1.0
 
     axis_joint:
       x: 1                                    # Left thumbstick vertical
@@ -31,8 +31,8 @@ teleop_twist_joy_node:
 
     linear_acceleration_limit: 0.12
     linear_deceleration_limit: 0.12
-    angular_acceleration_limit: 0.08
-    angular_deceleration_limit: 0.08
+    angular_acceleration_limit: 0.055
+    angular_deceleration_limit: 0.055
     joint_velocity_limit: 0.4
 
     # joints: 
