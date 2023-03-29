@@ -668,6 +668,9 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
 
       velocity_setpoint = 0.0;
+      last_linear_vel["x"] = 0.0;
+      last_linear_vel["y"] = 0.0;
+      last_angular_vel["yaw"] = 0.0;
       joint_pose_msg->header.stamp = joy_msg->header.stamp;
       joint_pose_msg->name = joint_names;
       joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -780,6 +783,9 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
 
       velocity_setpoint = 0.0;
+      last_linear_vel["x"] = 0.0;
+      last_linear_vel["y"] = 0.0;
+      last_angular_vel["yaw"] = 0.0;
       joint_pose_msg->header.stamp = joy_msg->header.stamp;
       joint_pose_msg->name = joint_names;
       joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
