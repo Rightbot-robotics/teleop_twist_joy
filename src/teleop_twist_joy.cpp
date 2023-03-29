@@ -545,6 +545,10 @@ void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr 
   const double dt = (to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_joy_time)).seconds();
   if(!joy_msg->buttons[enable_button])
   {
+    velocity_setpoint = 0.0;
+    last_linear_vel["x"] = 0.0;
+    last_linear_vel["y"] = 0.0;
+    last_angular_vel["yaw"] = 0.0;
     cmd_vel_pub->publish(std::move(cmd_vel_msg));
     sent_disable_msg = true;
     last_joy_time = joy_msg->header.stamp;
