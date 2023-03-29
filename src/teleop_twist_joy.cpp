@@ -476,6 +476,7 @@ std::map<std::string, double> default_scale_joint_turbo_map{
     {
     this->pimpl_->last_joint_pose[joint_name] = 0.0;
     }
+    this->pimpl_->velocity_setpoint = 0.0;
     return result;
   };
 
@@ -542,9 +543,43 @@ void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr 
   // Initializes with zeros by default.
   auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
 
-  const double dt = (to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_joy_time)).seconds();
-  if(!joy_msg->buttons[enable_button])
+  if(!require_enable_button ||
+      (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
+            joy_msg->buttons[enable_button]))
   {
+    if(sent_disable_msg)
+    {
+    velocity_setpoint = 0.0;
+    last_linear_vel["x"] = 0.0;
+    last_linear_vel["y"] = 0.0;
+    last_angular_vel["yaw"] = 0.0;
+    }
+    ROS_INFO_COND_NAMED(enable_mode_button > 0, "SherlockTeleopJoy",
+        "sending cmd_vel");
+    const double dt = (to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_joy_time)).seconds();
+    // // Compute the new linear velocities
+    double joy_val = joy_msg->axes[axis_linear_map.at("x")];
+    velocity_setpoint = joy_val * scale_linear_map[which_map].at("x");
+    cmd_vel_msg->linear.x = calculateNewVelocity(velocity_setpoint, dt, last_linear_vel["x"], linear_acceleration_limit, linear_deceleration_limit);
+    last_linear_vel["x"] = cmd_vel_msg->linear.x;
+    
+    joy_val = joy_msg->axes[axis_linear_map.at("y")];
+    velocity_setpoint = joy_val * scale_linear_map[which_map].at("y");
+    cmd_vel_msg->linear.y = calculateNewVelocity(velocity_setpoint, dt, last_linear_vel["y"], linear_acceleration_limit, linear_deceleration_limit);
+    last_linear_vel["y"] = cmd_vel_msg->linear.y;
+
+    // Compute the new angular velocities
+    joy_val = joy_msg->axes[axis_angular_map.at("yaw")];
+    velocity_setpoint = joy_val * scale_angular_map[which_map].at("yaw");
+    cmd_vel_msg->angular.z = calculateNewVelocity(velocity_setpoint, dt, last_angular_vel["yaw"], angular_acceleration_limit, angular_deceleration_limit);
+    last_angular_vel["yaw"] = cmd_vel_msg->angular.z;
+
+
+    cmd_vel_pub->publish(std::move(cmd_vel_msg));
+    sent_disable_msg = false;
+    last_joy_time = joy_msg->header.stamp;
+  }
+  else{
     velocity_setpoint = 0.0;
     last_linear_vel["x"] = 0.0;
     last_linear_vel["y"] = 0.0;
@@ -552,29 +587,7 @@ void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr 
     cmd_vel_pub->publish(std::move(cmd_vel_msg));
     sent_disable_msg = true;
     last_joy_time = joy_msg->header.stamp;
-    return;
   }
-  // // Compute the new linear velocities
-  double joy_val = joy_msg->axes[axis_linear_map.at("x")];
-  velocity_setpoint = joy_val * scale_linear_map[which_map].at("x");
-  cmd_vel_msg->linear.x = calculateNewVelocity(velocity_setpoint, dt, last_linear_vel["x"], linear_acceleration_limit, linear_deceleration_limit);
-  last_linear_vel["x"] = cmd_vel_msg->linear.x;
-  
-  joy_val = joy_msg->axes[axis_linear_map.at("y")];
-  velocity_setpoint = joy_val * scale_linear_map[which_map].at("y");
-  cmd_vel_msg->linear.y = calculateNewVelocity(velocity_setpoint, dt, last_linear_vel["y"], linear_acceleration_limit, linear_deceleration_limit);
-  last_linear_vel["y"] = cmd_vel_msg->linear.y;
-
-  // Compute the new angular velocities
-  joy_val = joy_msg->axes[axis_angular_map.at("yaw")];
-  velocity_setpoint = joy_val * scale_angular_map[which_map].at("yaw");
-  cmd_vel_msg->angular.z = calculateNewVelocity(velocity_setpoint, dt, last_angular_vel["yaw"], angular_acceleration_limit, angular_deceleration_limit);
-  last_angular_vel["yaw"] = cmd_vel_msg->angular.z;
-
-
-  cmd_vel_pub->publish(std::move(cmd_vel_msg));
-  sent_disable_msg = false;
-  last_joy_time = joy_msg->header.stamp;
 }
 
 double TeleopTwistJoy::Impl::capValue(double value, int64_t position)
@@ -659,7 +672,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
   {
     if (enable_turbo_button >= 0 &&
         static_cast<int>(joy_msg->buttons.size()) > enable_turbo_button &&
-        joy_msg->buttons[enable_turbo_button] and (!require_enable_button ||
+        joy_msg->buttons[enable_turbo_button] && (!require_enable_button ||
       (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
             joy_msg->buttons[enable_button])))
     {
@@ -677,12 +690,8 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       // in order to stop the robot.
 
       // Initializes with zeros by default.
+      last_joy_time = joy_msg->header.stamp;
       auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
-
-      velocity_setpoint = 0.0;
-      last_linear_vel["x"] = 0.0;
-      last_linear_vel["y"] = 0.0;
-      last_angular_vel["yaw"] = 0.0;
       joint_pose_msg->header.stamp = joy_msg->header.stamp;
       joint_pose_msg->name = joint_names;
       joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -693,12 +702,14 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
         joint_pose_msg->position[pos] = it->second;
       }
       joint_pose_pub->publish(std::move(joint_pose_msg));
-      // When enable button is released, send no-motion commands
-      // in order to stop the robot.
 
-      // Initializes with zeros by default.
+      velocity_setpoint = 0.0;
+      last_linear_vel["x"] = 0.0;
+      last_linear_vel["y"] = 0.0;
+      last_angular_vel["yaw"] = 0.0;
       auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
       cmd_vel_pub->publish(std::move(cmd_vel_msg));
+      sent_disable_msg = true;
     }
   }
   else
@@ -774,11 +785,13 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
     last_gripper_execution_time = joy_msg->header.stamp;
 
     }
+
     if (enable_turbo_button >= 0 &&
         static_cast<int>(joy_msg->buttons.size()) > enable_turbo_button &&
-        joy_msg->buttons[enable_turbo_button] and (!require_enable_button ||
-      (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
-            joy_msg->buttons[enable_button])))
+        joy_msg->buttons[enable_turbo_button] && 
+        (!require_enable_button || 
+          (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
+          joy_msg->buttons[enable_button])))
     {
       sendJointPoseMsg(joy_msg, "turbo", joint_names[joint_index], gripper);
     }
@@ -794,12 +807,9 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       // in order to stop the manipulator.
 
       // Initializes with zeros by default.
+      last_joy_time = joy_msg->header.stamp;
       auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
 
-      velocity_setpoint = 0.0;
-      last_linear_vel["x"] = 0.0;
-      last_linear_vel["y"] = 0.0;
-      last_angular_vel["yaw"] = 0.0;
       joint_pose_msg->header.stamp = joy_msg->header.stamp;
       joint_pose_msg->name = joint_names;
       joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -810,12 +820,14 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
         joint_pose_msg->position[pos] = it->second;
       }
       joint_pose_pub->publish(std::move(joint_pose_msg));
-      // When enable button is unpressed, send no-motion commands
-      // in order to stop the robot.
 
-      // Initializes with zeros by default.
+      velocity_setpoint = 0.0;
+      last_linear_vel["x"] = 0.0;
+      last_linear_vel["y"] = 0.0;
+      last_angular_vel["yaw"] = 0.0;
       auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
       cmd_vel_pub->publish(std::move(cmd_vel_msg));
+      sent_disable_msg = true;
     }
   }
 }
