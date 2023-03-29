@@ -105,6 +105,7 @@ struct TeleopTwistJoy::Impl
   double angular_deceleration_limit;
 
   double joint_velocity_limit;
+  double velocity_setpoint;
 
   // Store last execution times
   rclcpp::Time last_mode_execution_time;
@@ -486,11 +487,11 @@ TeleopTwistJoy::~TeleopTwistJoy()
   delete pimpl_;
 }
 
-double TeleopTwistJoy::Impl::calculateNewVelocity(double velocity_setpoint, double dt, double last_velocity, double accel_limit, double decel_limit)
+double TeleopTwistJoy::Impl::calculateNewVelocity(double setpoint, double dt, double last_velocity, double accel_limit, double decel_limit)
 {
   double max_acceleration = accel_limit * dt;
   double max_deceleration = decel_limit * dt;
-  double error = velocity_setpoint - last_velocity;
+  double error = setpoint - last_velocity;
   double new_velocity = last_velocity;
 
   if (error > 0) 
@@ -545,7 +546,7 @@ void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr 
 
   // // Compute the new linear velocities
   double joy_val = joy_msg->axes[axis_linear_map.at("x")];
-  double velocity_setpoint = joy_val * scale_linear_map[which_map].at("x");
+  velocity_setpoint = joy_val * scale_linear_map[which_map].at("x");
   cmd_vel_msg->linear.x = calculateNewVelocity(velocity_setpoint, dt, last_linear_vel["x"], linear_acceleration_limit, linear_deceleration_limit);
   last_linear_vel["x"] = cmd_vel_msg->linear.x;
   
@@ -666,7 +667,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       // Initializes with zeros by default.
       auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
 
-
+      velocity_setpoint = 0.0;
       joint_pose_msg->header.stamp = joy_msg->header.stamp;
       joint_pose_msg->name = joint_names;
       joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
@@ -778,7 +779,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       // Initializes with zeros by default.
       auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
 
-
+      velocity_setpoint = 0.0;
       joint_pose_msg->header.stamp = joy_msg->header.stamp;
       joint_pose_msg->name = joint_names;
       joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
