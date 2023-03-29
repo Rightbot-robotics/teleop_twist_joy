@@ -543,7 +543,13 @@ void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr 
   auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
 
   const double dt = (to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_joy_time)).seconds();
-
+  if(!joy_msg->buttons[enable_button])
+  {
+    cmd_vel_pub->publish(std::move(cmd_vel_msg));
+    sent_disable_msg = true;
+    last_joy_time = joy_msg->header.stamp;
+    return;
+  }
   // // Compute the new linear velocities
   double joy_val = joy_msg->axes[axis_linear_map.at("x")];
   velocity_setpoint = joy_val * scale_linear_map[which_map].at("x");
@@ -649,7 +655,9 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
   {
     if (enable_turbo_button >= 0 &&
         static_cast<int>(joy_msg->buttons.size()) > enable_turbo_button &&
-        joy_msg->buttons[enable_turbo_button])
+        joy_msg->buttons[enable_turbo_button] and (!require_enable_button ||
+      (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
+            joy_msg->buttons[enable_button])))
     {
       sendCmdVelMsg(joy_msg, "turbo");
     }
@@ -661,7 +669,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
     }
     else
     {
-      // When enable button is released, send no-motion commands
+      // When enable button is unpressed, send no-motion commands
       // in order to stop the robot.
 
       // Initializes with zeros by default.
@@ -764,7 +772,9 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
     }
     if (enable_turbo_button >= 0 &&
         static_cast<int>(joy_msg->buttons.size()) > enable_turbo_button &&
-        joy_msg->buttons[enable_turbo_button])
+        joy_msg->buttons[enable_turbo_button] and (!require_enable_button ||
+      (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
+            joy_msg->buttons[enable_button])))
     {
       sendJointPoseMsg(joy_msg, "turbo", joint_names[joint_index], gripper);
     }
@@ -776,7 +786,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
     }
     else
     {
-      // When enable button is released, send no-motion commands
+      // When enable button is unpressed, send no-motion commands
       // in order to stop the manipulator.
 
       // Initializes with zeros by default.
@@ -796,7 +806,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
         joint_pose_msg->position[pos] = it->second;
       }
       joint_pose_pub->publish(std::move(joint_pose_msg));
-      // When enable button is released, send no-motion commands
+      // When enable button is unpressed, send no-motion commands
       // in order to stop the robot.
 
       // Initializes with zeros by default.
