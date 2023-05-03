@@ -68,6 +68,8 @@ struct TeleopTwistJoy::Impl
 
   bool require_enable_button;
 
+  std::string cmd_vel_topic;
+
   // Store all buttons
   int64_t enable_button;
   int64_t enable_turbo_button;
@@ -132,12 +134,15 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
 {
   pimpl_ = new Impl;
 
-  pimpl_->cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
 
   pimpl_->joy_sub = this->create_subscription<sensor_msgs::msg::Joy>("joy", rclcpp::QoS(10),
     std::bind(&TeleopTwistJoy::Impl::joyCallback, this->pimpl_, std::placeholders::_1));
 
   pimpl_->joint_pose_pub = this->create_publisher<sensor_msgs::msg::JointState>("joint_states_joy", 10);
+  pimpl_->cmd_vel_topic = this->declare_parameter("cmd_vel_topic", "cmd_vel");
+
+  this->get_parameter("cmd_vel_topic", pimpl_->cmd_vel_topic);
+  pimpl_->cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>(this->pimpl_->cmd_vel_topic, 10);
 
   pimpl_->require_enable_button = this->declare_parameter("require_enable_button", true);
 
@@ -197,7 +202,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   this->declare_parameters("scale_linear_turbo", default_scale_linear_turbo_map);
   this->get_parameters("scale_linear_turbo", pimpl_->scale_linear_map["turbo"]);
 
-std::map<std::string, double> default_scale_joint_turbo_map{
+  std::map<std::string, double> default_scale_joint_turbo_map{
     {"x", 1.0},
     {"y", 0.0},
     {"z", 0.0},
@@ -286,6 +291,7 @@ std::map<std::string, double> default_scale_joint_turbo_map{
                                                  "angular_acceleration_limit", "angular_deceleration_limit",
                                                  "joint_velocity_limit", "scale_joint.x", "scale_joint_turbo.x"};
     static std::set<std::string> boolparams = {"require_enable_button"};
+    static std::set<std::string> stringparams = {"cmd_vel_topic"};
     auto result = rcl_interfaces::msg::SetParametersResult();
     result.successful = true;
 
@@ -335,6 +341,10 @@ std::map<std::string, double> default_scale_joint_turbo_map{
       {
         this->pimpl_->enable_button = parameter.get_value<rclcpp::PARAMETER_INTEGER>();
       }
+      // if (parameter.get_name() == "cmd_vel_topic")
+      // {
+      //   this->pimpl_->cmd_vel_topic = parameter.get_value<rclcpp::PARAMETER_STRING>();
+      // }
       else if (parameter.get_name() == "enable_turbo_button")
       {
         this->pimpl_->enable_turbo_button = parameter.get_value<rclcpp::PARAMETER_INTEGER>();
@@ -477,6 +487,7 @@ std::map<std::string, double> default_scale_joint_turbo_map{
     this->pimpl_->last_joint_pose[joint_name] = 0.0;
     }
     this->pimpl_->velocity_setpoint = 0.0;
+    // create a publisher to publish cmd_vel to the topic name given in cmd_vel_topic param
     return result;
   };
 
