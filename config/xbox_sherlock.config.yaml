@@ -15,6 +15,12 @@ teleop_twist_joy_node:
     scale_angular:
       yaw: 1.0 
 
+    pos_linear:                               # D-Pad buttons to move in pose mode
+      x: 7
+      y: 6
+
+    scale_pos: 1.0                              # Metre(s)
+
     axis_joint:
       x: 1                                    # Left thumbstick vertical
     scale_joint: 
