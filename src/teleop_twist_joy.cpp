@@ -36,6 +36,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include <rcutils/logging_macros.h>
 #include <sensor_msgs/msg/joy.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <rightbot_interfaces/srv/motor_recovery.hpp>
 
 
 #include "teleop_twist_joy/teleop_twist_joy.hpp"
@@ -55,6 +56,7 @@ struct TeleopTwistJoy::Impl
 {
   void joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy);
   void sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr, const std::string& which_map);
+  void resetErrors();
   void sendCmdPosMsg(const sensor_msgs::msg::Joy::SharedPtr);
   void sendJointPoseMsg(const sensor_msgs::msg::Joy::SharedPtr, const std::string& which_map, std::string joint_name, bool gripper);
   double capValue(double value, int64_t position);
@@ -67,6 +69,7 @@ struct TeleopTwistJoy::Impl
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr cmd_pos_pub;
+  rclcpp::Client<rightbot_interfaces::srv::MotorRecovery>::SharedPtr error_reset_client;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pose_pub;
 
   bool require_enable_button;
@@ -74,6 +77,7 @@ struct TeleopTwistJoy::Impl
   std::string cmd_vel_topic;
 
   // Store all buttons
+  int64_t error_reset_button;
   int64_t enable_button;
   int64_t enable_turbo_button;
   int64_t enable_mode_button;
@@ -118,6 +122,7 @@ struct TeleopTwistJoy::Impl
   double velocity_setpoint;
 
   // Store last execution times
+  rclcpp::Time last_error_reset_execution_time;
   rclcpp::Time last_mode_execution_time;
   rclcpp::Time last_pos_execution_time;
   rclcpp::Time last_gripper_execution_time;
@@ -151,11 +156,14 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   pimpl_->joint_pose_pub = this->create_publisher<sensor_msgs::msg::JointState>("joint_states_joy", 10);
   pimpl_->cmd_vel_topic = this->declare_parameter("cmd_vel_topic", "cmd_vel");
 
+  pimpl_->error_reset_client = this->create_client<rightbot_interfaces::srv::MotorRecovery>("motor_recovery");
+
   this->get_parameter("cmd_vel_topic", pimpl_->cmd_vel_topic);
   pimpl_->cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>(this->pimpl_->cmd_vel_topic, 10);
 
   pimpl_->require_enable_button = this->declare_parameter("require_enable_button", true);
 
+  pimpl_->error_reset_button = this->declare_parameter("error_reset_button", 15);
   pimpl_->enable_button = this->declare_parameter("enable_button", 5);
   pimpl_->enable_turbo_button = this->declare_parameter("enable_turbo_button", -1);
   pimpl_->enable_mode_button = this->declare_parameter("enable_mode_button", 12);
@@ -189,7 +197,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   this->get_parameters("axis_joint", pimpl_->axis_joint_map);
 
   std::map<std::string, double> default_scale_linear_normal_map{
-    {"x", 0.5},
+    {"x", 0.0},
     {"y", 0.0},
     {"z", 0.0},
   };
@@ -197,7 +205,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   this->get_parameters("scale_linear", pimpl_->scale_linear_map["normal"]);
 
   std::map<std::string, double> default_scale_joint_normal_map{
-    {"x", 0.5},
+    {"x", 0.0},
     {"y", 0.0},
     {"z", 0.0},
   };
@@ -205,7 +213,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   this->get_parameters("scale_joint", pimpl_->scale_joint_map["normal"]);
 
   std::map<std::string, double> default_scale_linear_turbo_map{
-    {"x", 1.0},
+    {"x", 0.0},
     {"y", 0.0},
     {"z", 0.0},
   };
@@ -213,7 +221,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   this->get_parameters("scale_linear_turbo", pimpl_->scale_linear_map["turbo"]);
 
   std::map<std::string, double> default_scale_joint_turbo_map{
-    {"x", 1.0},
+    {"x", 0.0},
     {"y", 0.0},
     {"z", 0.0},
   };
@@ -221,7 +229,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   this->get_parameters("scale_joint_turbo", pimpl_->scale_joint_map["turbo"]);
 
   std::map<std::string, double> default_scale_angular_normal_map{
-    {"yaw", 0.5},
+    {"yaw", 0.0},
     {"pitch", 0.0},
     {"roll", 0.0},
   };
@@ -229,7 +237,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   this->get_parameters("scale_angular", pimpl_->scale_angular_map["normal"]);
 
   std::map<std::string, double> default_scale_angular_turbo_map{
-    {"yaw", 1.0},
+    {"yaw", 0.0},
     {"pitch", 0.0},
     {"roll", 0.0},
   };
@@ -293,13 +301,16 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
 
   ROS_INFO_COND_NAMED(pimpl_->enable_mode_button >= 0, "SherlockTeleopJoy",
     "Teleop mode switch button: XBOX");
+  
+  ROS_INFO_COND_NAMED(pimpl_->enable_mode_button >= 0, "SherlockTeleopJoy",
+    "Error reset button: Share");
 
   pimpl_->sent_disable_msg = false;
 
   auto param_callback =
   [this](std::vector<rclcpp::Parameter> parameters)
   {
-    static std::set<std::string> intparams = {"axis_linear.x", "axis_linear.y", "axis_linear.z",
+    static std::set<std::string> intparams = {"axis_linear.x", "axis_linear.y", "axis_linear.z", "error_reset_button",
                                               "axis_angular.yaw", "axis_angular.pitch", "axis_angular.roll",
                                               "enable_button", "enable_turbo_button", "enable_mode_button", "enable_gripper_button",
                                               "prev_joint_button", "next_joint_button", "axis_joint.x", "pos_linear.x","pos_linear.y"};
@@ -356,6 +367,10 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
       if (parameter.get_name() == "require_enable_button")
       {
         this->pimpl_->require_enable_button = parameter.get_value<rclcpp::PARAMETER_BOOL>();
+      }
+      if (parameter.get_name() == "error_reset_button")
+      {
+        this->pimpl_->error_reset_button = parameter.get_value<rclcpp::PARAMETER_INTEGER>();
       }
       if (parameter.get_name() == "enable_button")
       {
@@ -693,6 +708,21 @@ void TeleopTwistJoy::Impl::sendJointPoseMsg(const sensor_msgs::msg::Joy::SharedP
   last_joy_time = joy_msg->header.stamp;
 }
 
+void TeleopTwistJoy::Impl::resetErrors()
+{
+  if (!error_reset_client->wait_for_service(std::chrono::seconds(1))) {
+    ROS_INFO_NAMED("SherlockTeleopJoy",
+    "Motor Recovery service not available");
+  }
+  auto request = std::make_shared<rightbot_interfaces::srv::MotorRecovery::Request>();
+
+  request->motor_name = "wheel_1_drive";
+  request->function_name = "RESET_FAULT";
+  auto result_future = error_reset_client->async_send_request(request);
+  auto result = result_future.get();
+  ROS_INFO_NAMED("SherlockTeleopJoy",
+    "Motor recovery status: %d", result->status);
+}
 
 void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy_msg)
 { 
@@ -726,6 +756,21 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
   
   if(!mode)
   {
+    if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_error_reset_execution_time)).seconds() >= 0.5)
+  {
+  
+    if (error_reset_button >= 0 && 
+      static_cast<int>(joy_msg->buttons.size()) > error_reset_button &&
+      joy_msg->buttons[error_reset_button])
+    {
+      ROS_INFO_COND_NAMED(error_reset_button > 0, "SherlockTeleopJoy",
+      "Resetting Motor Errors.");
+      resetErrors();
+    }
+
+  last_error_reset_execution_time = joy_msg->header.stamp;
+
+  }
     if (enable_turbo_button >= 0 &&
         static_cast<int>(joy_msg->buttons.size()) > enable_turbo_button &&
         joy_msg->buttons[enable_turbo_button] && (!require_enable_button ||

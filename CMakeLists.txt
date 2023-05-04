@@ -16,6 +16,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(rightbot_interfaces REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED src/${PROJECT_NAME}.cpp)
 
@@ -32,6 +33,7 @@ ament_target_dependencies(${PROJECT_NAME}
   "rclcpp"
   "rclcpp_components"
   "sensor_msgs"
+  "rightbot_interfaces"
 )
 
 rclcpp_components_register_nodes(${PROJECT_NAME}
