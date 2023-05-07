@@ -28,7 +28,7 @@ teleop_twist_joy_node:
     scale_joint_turbo:
       x: 1.0
 
-    error_reset_button: 15                    # Share button
+    error_reset_button: 1                     # B button
     enable_button: 7                          # RB shoulder button
     enable_turbo_button: 6                    # LB shoulder button
     enable_mode_button: 12                    # XBOX logo button

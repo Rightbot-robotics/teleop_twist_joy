@@ -36,7 +36,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include <rcutils/logging_macros.h>
 #include <sensor_msgs/msg/joy.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
-#include <rightbot_interfaces/srv/motor_recovery.hpp>
+#include "rightbot_interfaces/srv/motor_recovery.hpp"
 
 
 #include "teleop_twist_joy/teleop_twist_joy.hpp"
@@ -56,7 +56,7 @@ struct TeleopTwistJoy::Impl
 {
   void joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy);
   void sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr, const std::string& which_map);
-  void resetErrors();
+  void resetErrors(std::string motor_name, std::string function_name);
   void sendCmdPosMsg(const sensor_msgs::msg::Joy::SharedPtr);
   void sendJointPoseMsg(const sensor_msgs::msg::Joy::SharedPtr, const std::string& which_map, std::string joint_name, bool gripper);
   double capValue(double value, int64_t position);
@@ -65,13 +65,15 @@ struct TeleopTwistJoy::Impl
   double calculateNewVelocity(double velocity_setpoint, double dt, double last_velocity, double accel_limit, double decel_limit);
 
   double calculateNewPosition(double position_setpoint, double dt, double last_position, double velocity_limit);
-
+ 
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
   rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr cmd_pos_pub;
   rclcpp::Client<rightbot_interfaces::srv::MotorRecovery>::SharedPtr error_reset_client;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pose_pub;
-
+  
+  // Obtain a reference to the underlying rcl_node_t structure
+  rclcpp::Node::SharedPtr node;
   bool require_enable_button;
 
   std::string cmd_vel_topic;
@@ -148,7 +150,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
 {
   pimpl_ = new Impl;
 
-
+  pimpl_->node = std::shared_ptr<rclcpp::Node>(this);
   pimpl_->joy_sub = this->create_subscription<sensor_msgs::msg::Joy>("joy", rclcpp::QoS(10),
     std::bind(&TeleopTwistJoy::Impl::joyCallback, this->pimpl_, std::placeholders::_1));
 
@@ -300,10 +302,19 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
     "Turbo button: LB");
 
   ROS_INFO_COND_NAMED(pimpl_->enable_mode_button >= 0, "SherlockTeleopJoy",
-    "Teleop mode switch button: XBOX");
+    "Base/Manipulator mode switch button: XBOX");
   
   ROS_INFO_COND_NAMED(pimpl_->enable_mode_button >= 0, "SherlockTeleopJoy",
-    "Error reset button: Share");
+    "Error reset button: B");
+  
+  ROS_INFO_COND_NAMED(pimpl_->enable_mode_button >= 0, "SherlockTeleopJoy",
+    "Pos control: D-Pad");
+  
+  ROS_INFO_COND_NAMED(pimpl_->enable_mode_button >= 0, "SherlockTeleopJoy",
+    "X/Y vel control: Left stick");
+  
+  ROS_INFO_COND_NAMED(pimpl_->enable_mode_button >= 0, "SherlockTeleopJoy",
+    "Yaw vel control: Right stick");
 
   pimpl_->sent_disable_msg = false;
 
@@ -708,27 +719,43 @@ void TeleopTwistJoy::Impl::sendJointPoseMsg(const sensor_msgs::msg::Joy::SharedP
   last_joy_time = joy_msg->header.stamp;
 }
 
-void TeleopTwistJoy::Impl::resetErrors()
+void TeleopTwistJoy::Impl::resetErrors(std::string motor_name, std::string function_name)
 {
-  if (!error_reset_client->wait_for_service(std::chrono::seconds(1))) {
-    ROS_INFO_NAMED("SherlockTeleopJoy",
-    "Motor Recovery service not available");
-  }
-  auto request = std::make_shared<rightbot_interfaces::srv::MotorRecovery::Request>();
 
-  request->motor_name = "wheel_1_drive";
-  request->function_name = "RESET_FAULT";
-  auto result_future = error_reset_client->async_send_request(request);
-  auto result = result_future.get();
-  ROS_INFO_NAMED("SherlockTeleopJoy",
-    "Motor recovery status: %d", result->status);
+  while (!error_reset_client->wait_for_service(std::chrono::seconds(1))) 
+  {
+    if (!rclcpp::ok())
+    {
+      ROS_INFO_NAMED("SherlockTeleopJoy", "Interrupted while waiting for the service. Exiting.");
+      return;
+    }
+    ROS_INFO_NAMED("SherlockTeleopJoy", "Waiting for the service to appear...");
+  }
+  ROS_INFO_COND_NAMED(error_reset_button > 0, "SherlockTeleopJoy",
+      "Resetting Motor Errors.");
+  auto request = std::make_shared<rightbot_interfaces::srv::MotorRecovery::Request>();
+  request->motor_name = motor_name;
+  request->function_name = function_name;
+
+  auto future = error_reset_client->async_send_request(request);
+
+  // if (future.wait_for(std::chrono::seconds(1)) == std::future_status::timeout)
+  // {
+  //   error_reset_client->remove_pending_request(future);
+  // } else {
+  //   auto result = future.get();
+  //   // auto result = result_future.get();
+    ROS_INFO_NAMED("SherlockTeleopJoy",
+      "%s for %s: %d", function_name.c_str(), motor_name.c_str());
+
+  // }
+  
 }
 
 void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy_msg)
 { 
   if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_mode_execution_time)).seconds() >= 0.5)
   {
-  
     if (enable_mode_button >= 0 && 
       static_cast<int>(joy_msg->buttons.size()) > enable_mode_button &&
       joy_msg->buttons[enable_mode_button])
@@ -756,19 +783,23 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
   
   if(!mode)
   {
-    if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_error_reset_execution_time)).seconds() >= 0.5)
-  {
+    
   
-    if (error_reset_button >= 0 && 
-      static_cast<int>(joy_msg->buttons.size()) > error_reset_button &&
-      joy_msg->buttons[error_reset_button])
-    {
-      ROS_INFO_COND_NAMED(error_reset_button > 0, "SherlockTeleopJoy",
-      "Resetting Motor Errors.");
-      resetErrors();
+  if (error_reset_button > 0 && 
+    static_cast<int>(joy_msg->buttons.size()) > error_reset_button &&
+    joy_msg->buttons[error_reset_button])
+  {
+    if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_error_reset_execution_time)).seconds() >= 0.5)
+      {
+      resetErrors("wheel_1_drive", "RESET_FAULT");
+      resetErrors("wheel_2_drive", "RESET_FAULT");
+      resetErrors("wheel_1_steer", "RESET_FAULT");
+      resetErrors("wheel_2_steer", "RESET_FAULT");
+      resetErrors("wheel_1_steer", "RESET_COMMUNICATION");
+      resetErrors("wheel_2_steer", "RESET_COMMUNICATION");
+      last_error_reset_execution_time = joy_msg->header.stamp;
     }
 
-  last_error_reset_execution_time = joy_msg->header.stamp;
 
   }
     if (enable_turbo_button >= 0 &&

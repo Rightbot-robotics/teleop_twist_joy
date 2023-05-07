@@ -38,7 +38,20 @@ ament_target_dependencies(${PROJECT_NAME}
 
 rclcpp_components_register_nodes(${PROJECT_NAME}
   "teleop_twist_joy::TeleopTwistJoy")
+# # Define the executable
+# add_executable(motor_recovery src/motor_recovery.cpp)
 
+# # Link the executable with required libraries
+# ament_target_dependencies(motor_recovery
+#   rclcpp
+#   rightbot_interfaces
+# )
+
+# # Install the executable
+# install(TARGETS
+#   motor_recovery
+#   DESTINATION lib/${PROJECT_NAME}
+# )
 add_executable(${PROJECT_NAME}_node src/teleop_node.cpp)
 target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME}_node
