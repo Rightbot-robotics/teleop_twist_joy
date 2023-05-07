@@ -4,8 +4,8 @@ teleop_twist_joy_node:
       x: 1                                    # Left thumbstick vertical
       y: 0                                    # Left thumbstick horizontal
     scale_linear:
-      x: 0.3
-      y: 0.3
+      x: 0.5
+      y: 0.5
     scale_linear_turbo:
       x: 1.0
       y: 1.0
@@ -36,8 +36,8 @@ teleop_twist_joy_node:
     prev_joint_button: 3                      # X button
     next_joint_button: 1                      # B button
     cmd_vel_topic: "cmd_vel"                  # Default: "cmd_vel"
-    linear_acceleration_limit: 0.12
-    linear_deceleration_limit: 0.12
+    linear_acceleration_limit: 0.2
+    linear_deceleration_limit: 0.2
     angular_acceleration_limit: 0.055
     angular_deceleration_limit: 0.055
     joint_velocity_limit: 0.4
