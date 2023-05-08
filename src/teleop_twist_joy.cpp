@@ -746,7 +746,7 @@ void TeleopTwistJoy::Impl::resetErrors(std::string motor_name, std::string funct
   //   auto result = future.get();
   //   // auto result = result_future.get();
     ROS_INFO_NAMED("SherlockTeleopJoy",
-      "%s for %s: %d", function_name.c_str(), motor_name.c_str());
+      "%s complete for %s", function_name.c_str(), motor_name.c_str());
 
   // }
   
