@@ -19,7 +19,7 @@ teleop_twist_joy_node:
       x: 7
       y: 6
 
-    scale_pos: 1.0                            # Metre(s)
+    scale_pos: 0.5                            # Metre(s)
 
     axis_joint:
       x: 1                                    # Left thumbstick vertical
