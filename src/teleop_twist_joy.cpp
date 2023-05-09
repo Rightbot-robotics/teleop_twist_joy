@@ -836,9 +836,9 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
             joy_msg->buttons[enable_button]))
     {
       // Check if the axes values were high while enabling controller
-      if (joy_msg->axes[axis_linear_map.at("x")] != 0.0 && prev_enable_button == 0 ||
-        joy_msg->axes[axis_linear_map.at("y")] != 0.0 && prev_enable_button == 0 ||
-        joy_msg->axes[axis_angular_map.at("y")] != 0.0 && prev_enable_button == 0)
+      if ((joy_msg->axes[axis_linear_map.at("x")] != 0.0 && prev_enable_button == 0) ||
+        (joy_msg->axes[axis_linear_map.at("y")] != 0.0 && prev_enable_button == 0) ||
+        (joy_msg->axes[axis_angular_map.at("y")] != 0.0 && prev_enable_button == 0))
         {
           return;
         }
