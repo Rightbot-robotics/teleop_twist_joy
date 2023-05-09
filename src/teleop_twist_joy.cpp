@@ -80,6 +80,7 @@ struct TeleopTwistJoy::Impl
 
   // Store all buttons
   int64_t error_reset_button;
+  int64_t prev_enable_button;
   int64_t enable_button;
   int64_t enable_turbo_button;
   int64_t enable_mode_button;
@@ -158,7 +159,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   pimpl_->joint_pose_pub = this->create_publisher<sensor_msgs::msg::JointState>("joint_states_joy", 10);
   pimpl_->cmd_vel_topic = this->declare_parameter("cmd_vel_topic", "cmd_vel");
 
-  pimpl_->error_reset_client = this->create_client<rightbot_interfaces::srv::MotorRecovery>("motor_recovery");
+  pimpl_->error_reset_client = this->create_client<rightbot_interfaces::srv::MotorRecovery>("base_motor_recovery");
 
   this->get_parameter("cmd_vel_topic", pimpl_->cmd_vel_topic);
   pimpl_->cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>(this->pimpl_->cmd_vel_topic, 10);
@@ -721,7 +722,6 @@ void TeleopTwistJoy::Impl::sendJointPoseMsg(const sensor_msgs::msg::Joy::SharedP
 
 void TeleopTwistJoy::Impl::resetErrors(std::string motor_name, std::string function_name)
 {
-
   while (!error_reset_client->wait_for_service(std::chrono::seconds(1))) 
   {
     if (!rclcpp::ok())
@@ -808,6 +808,14 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
             joy_msg->buttons[enable_button])))
     {
+      // Check if the axes values were high while enabling controller
+      if (joy_msg->axes[axis_linear_map.at("x")] != 0.0 && prev_enable_button == 0 ||
+        joy_msg->axes[axis_linear_map.at("y")] != 0.0 && prev_enable_button == 0 ||
+        joy_msg->axes[axis_angular_map.at("y")] != 0.0 && prev_enable_button == 0)
+        {
+          return;
+        }
+      prev_enable_button = 1;
       // check if any pos_linear button is pressed
       if (joy_msg->axes[pos_linear_map.at("x")] != 0.0 ||
           joy_msg->axes[pos_linear_map.at("y")] != 0.0)
@@ -827,6 +835,14 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
             joy_msg->buttons[enable_button]))
     {
+      // Check if the axes values were high while enabling controller
+      if (joy_msg->axes[axis_linear_map.at("x")] != 0.0 && prev_enable_button == 0 ||
+        joy_msg->axes[axis_linear_map.at("y")] != 0.0 && prev_enable_button == 0 ||
+        joy_msg->axes[axis_angular_map.at("y")] != 0.0 && prev_enable_button == 0)
+        {
+          return;
+        }
+      prev_enable_button = 1;
       if (joy_msg->axes[pos_linear_map.at("x")] != 0.0 ||
           joy_msg->axes[pos_linear_map.at("y")] != 0.0)
         {
