@@ -37,6 +37,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 #include <sensor_msgs/msg/joy.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include "rightbot_interfaces/srv/motor_recovery.hpp"
+#include "rightbot_interfaces/srv/position_control.hpp"
 
 
 #include "teleop_twist_joy/teleop_twist_joy.hpp"
@@ -57,7 +58,7 @@ struct TeleopTwistJoy::Impl
   void joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy);
   void sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr, const std::string& which_map);
   void resetErrors(std::string motor_name, std::string function_name);
-  void sendCmdPosMsg(const sensor_msgs::msg::Joy::SharedPtr);
+  void sendCmdPosRequest(const sensor_msgs::msg::Joy::SharedPtr);
   void sendJointPoseMsg(const sensor_msgs::msg::Joy::SharedPtr, const std::string& which_map, std::string joint_name, bool gripper);
   double capValue(double value, int64_t position);
 
@@ -68,8 +69,9 @@ struct TeleopTwistJoy::Impl
  
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub;
-  rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr cmd_pos_pub;
+  // rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr cmd_pos_pub;
   rclcpp::Client<rightbot_interfaces::srv::MotorRecovery>::SharedPtr error_reset_client;
+  rclcpp::Client<rightbot_interfaces::srv::PositionControl>::SharedPtr pos_control_client;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pose_pub;
   
   // Obtain a reference to the underlying rcl_node_t structure
@@ -155,11 +157,12 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   pimpl_->joy_sub = this->create_subscription<sensor_msgs::msg::Joy>("joy", rclcpp::QoS(10),
     std::bind(&TeleopTwistJoy::Impl::joyCallback, this->pimpl_, std::placeholders::_1));
 
-  pimpl_->cmd_pos_pub = this->create_publisher<geometry_msgs::msg::Point>("cmd_pos", 10);
+  // pimpl_->cmd_pos_pub = this->create_publisher<geometry_msgs::msg::Point>("cmd_pos", 10);
   pimpl_->joint_pose_pub = this->create_publisher<sensor_msgs::msg::JointState>("joint_states_joy", 10);
   pimpl_->cmd_vel_topic = this->declare_parameter("cmd_vel_topic", "cmd_vel");
 
   pimpl_->error_reset_client = this->create_client<rightbot_interfaces::srv::MotorRecovery>("base_motor_recovery");
+  pimpl_->pos_control_client = this->create_client<rightbot_interfaces::srv::PositionControl>("position_control");
 
   this->get_parameter("cmd_vel_topic", pimpl_->cmd_vel_topic);
   pimpl_->cmd_vel_pub = this->create_publisher<geometry_msgs::msg::Twist>(this->pimpl_->cmd_vel_topic, 10);
@@ -602,21 +605,46 @@ rclcpp::Time TeleopTwistJoy::Impl::to_rclcpp_time(const std_msgs::msg::Header::_
   return rclcpp::Time(stamp.sec, stamp.nanosec);
 }
 
-void TeleopTwistJoy::Impl::sendCmdPosMsg(const sensor_msgs::msg::Joy::SharedPtr joy_msg)
+void TeleopTwistJoy::Impl::sendCmdPosRequest(const sensor_msgs::msg::Joy::SharedPtr joy_msg)
 {
   // Initializes with zeros by default.
-  auto cmd_pos_msg = std::make_unique<geometry_msgs::msg::Point>();
+  // auto cmd_pos_msg = std::make_unique<geometry_msgs::msg::Point>();
 
   if(!require_enable_button ||
       (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
             joy_msg->buttons[enable_button]))
   {
-    ROS_INFO_COND_NAMED(enable_mode_button > 0, "SherlockTeleopJoy",
-    "sending cmd_pos");
-    cmd_pos_msg->x = joy_msg->axes[pos_linear_map.at("x")] * scale_pos;
-    cmd_pos_msg->y = joy_msg->axes[pos_linear_map.at("y")] * scale_pos;
-    cmd_pos_msg->z = 0.0;
-    cmd_pos_pub->publish(std::move(cmd_pos_msg));
+    // cmd_pos_msg->x = joy_msg->axes[pos_linear_map.at("x")] * scale_pos;
+    // cmd_pos_msg->y = joy_msg->axes[pos_linear_map.at("y")] * scale_pos;
+    // cmd_pos_msg->z = 0.0;
+    // cmd_pos_pub->publish(std::move(cmd_pos_msg));
+    while (!pos_control_client->wait_for_service(std::chrono::seconds(1))) 
+    {
+      if (!rclcpp::ok())
+      {
+        ROS_INFO_NAMED("SherlockTeleopJoy", "Interrupted while waiting for the pos_control service. Exiting.");
+        return;
+      }
+      ROS_INFO_NAMED("SherlockTeleopJoy", "Waiting for the pos_control service to appear...");
+    }
+    ROS_INFO_COND_NAMED(pos_control_client > 0, "SherlockTeleopJoy",
+        "Moving Sherlock base to requested position.");
+    auto request = std::make_shared<rightbot_interfaces::srv::PositionControl::Request>();
+    request->x = joy_msg->axes[pos_linear_map.at("x")] * scale_pos;;
+    request->y = joy_msg->axes[pos_linear_map.at("y")] * scale_pos;;
+    request->set_final_angle = false;
+    auto future = pos_control_client->async_send_request(request);
+
+    // if (future.wait_for(std::chrono::seconds(1)) == std::future_status::timeout)
+    // {
+    //   pos_control_client->remove_pending_request(future);
+    // } else {
+    //   auto result = future.get();
+    //   // auto result = result_future.get();
+      ROS_INFO_NAMED("SherlockTeleopJoy",
+        "Moved position command to Sherlock base");
+
+    // }
   }
 }
 
@@ -822,7 +850,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
         {
           if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_pos_execution_time)).seconds() >= 0.5)
           {
-            sendCmdPosMsg(joy_msg);
+            sendCmdPosRequest(joy_msg);
             last_pos_execution_time = joy_msg->header.stamp;
             return;
           }
@@ -848,7 +876,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
         {
           if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_pos_execution_time)).seconds() >= 0.5)
           {
-            sendCmdPosMsg(joy_msg);
+            sendCmdPosRequest(joy_msg);
             last_pos_execution_time = joy_msg->header.stamp;
             return;
           }
