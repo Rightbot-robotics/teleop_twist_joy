@@ -38,8 +38,8 @@ teleop_twist_joy_node:
     cmd_vel_topic: "cmd_vel"                  # Default: "cmd_vel"
     linear_acceleration_limit: 0.2
     linear_deceleration_limit: 0.2
-    angular_acceleration_limit: 0.055
-    angular_deceleration_limit: 0.055
+    angular_acceleration_limit: 0.15
+    angular_deceleration_limit: 0.15
     joint_velocity_limit: 0.4
 
     # joints: 
