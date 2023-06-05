@@ -134,6 +134,7 @@ struct TeleopTwistJoy::Impl
   rclcpp::Time last_prev_joint_execution_time;
   rclcpp::Time last_next_joint_execution_time;
   rclcpp::Time last_joy_time;
+  rclcpp::Time last_disable_time;
 
   // Store prev state 
   double last_joy_val_x;
@@ -858,6 +859,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       else{
         sendCmdVelMsg(joy_msg, "turbo");
       }
+      last_disable_time = joy_msg->header.stamp;
     }
     else if (!require_enable_button ||
       (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
@@ -884,6 +886,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       else{
         sendCmdVelMsg(joy_msg, "normal");
       }
+      last_disable_time = joy_msg->header.stamp;
     }
     else
     {
@@ -891,26 +894,32 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       // in order to stop the robot.
 
       // Initializes with zeros by default.
-      last_joy_time = joy_msg->header.stamp;
-      auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
-      joint_pose_msg->header.stamp = joy_msg->header.stamp;
-      joint_pose_msg->name = joint_names;
-      joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-      std::map<std::string, double>::iterator it;
-      for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
-      { 
-        ptrdiff_t pos = distance(joint_names.begin(), find(joint_names.begin(), joint_names.end(), it->first));
-        joint_pose_msg->position[pos] = it->second;
-      }
-      joint_pose_pub->publish(std::move(joint_pose_msg));
+      if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_disable_time)).seconds() <= 5)
+      {
+        last_joy_time = joy_msg->header.stamp;
+        auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
+        joint_pose_msg->header.stamp = joy_msg->header.stamp;
+        joint_pose_msg->name = joint_names;
+        joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        std::map<std::string, double>::iterator it;
+        for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
+        { 
+          ptrdiff_t pos = distance(joint_names.begin(), find(joint_names.begin(), joint_names.end(), it->first));
+          joint_pose_msg->position[pos] = it->second;
+        }
+        joint_pose_pub->publish(std::move(joint_pose_msg));
 
-      velocity_setpoint = 0.0;
-      last_linear_vel["x"] = 0.0;
-      last_linear_vel["y"] = 0.0;
-      last_angular_vel["yaw"] = 0.0;
-      auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
-      cmd_vel_pub->publish(std::move(cmd_vel_msg));
-      sent_disable_msg = true;
+        velocity_setpoint = 0.0;
+        last_linear_vel["x"] = 0.0;
+        last_linear_vel["y"] = 0.0;
+        last_angular_vel["yaw"] = 0.0;
+        auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
+        cmd_vel_pub->publish(std::move(cmd_vel_msg));
+        sent_disable_msg = true;
+
+        last_disable_time = joy_msg->header.stamp;
+
+      }
     }
   }
   else
@@ -995,40 +1004,48 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
           joy_msg->buttons[enable_button])))
     {
       sendJointPoseMsg(joy_msg, "turbo", joint_names[joint_index], gripper);
+      last_disable_time = joy_msg->header.stamp;
     }
     else if (!require_enable_button ||
       (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
             joy_msg->buttons[enable_button]))
     {
       sendJointPoseMsg(joy_msg, "normal", joint_names[joint_index], gripper);
+      last_disable_time = joy_msg->header.stamp;
     }
     else
     {
-      // When enable button is unpressed, send no-motion commands
+      // When enable button is unpressed, send no-motion commands upto specified time
       // in order to stop the manipulator.
 
       // Initializes with zeros by default.
-      last_joy_time = joy_msg->header.stamp;
-      auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
+      if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_disable_time)).seconds() <= 5)
+      {
+        last_joy_time = joy_msg->header.stamp;
+        auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
 
-      joint_pose_msg->header.stamp = joy_msg->header.stamp;
-      joint_pose_msg->name = joint_names;
-      joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-      std::map<std::string, double>::iterator it;
-      for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
-      { 
-        ptrdiff_t pos = distance(joint_names.begin(), find(joint_names.begin(), joint_names.end(), it->first));
-        joint_pose_msg->position[pos] = it->second;
+        joint_pose_msg->header.stamp = joy_msg->header.stamp;
+        joint_pose_msg->name = joint_names;
+        joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        std::map<std::string, double>::iterator it;
+        for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
+        { 
+          ptrdiff_t pos = distance(joint_names.begin(), find(joint_names.begin(), joint_names.end(), it->first));
+          joint_pose_msg->position[pos] = it->second;
+        }
+        joint_pose_pub->publish(std::move(joint_pose_msg));
+
+        velocity_setpoint = 0.0;
+        last_linear_vel["x"] = 0.0;
+        last_linear_vel["y"] = 0.0;
+        last_angular_vel["yaw"] = 0.0;
+        auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
+        cmd_vel_pub->publish(std::move(cmd_vel_msg));
+        sent_disable_msg = true;
+        
+        last_disable_time = joy_msg->header.stamp;
+
       }
-      joint_pose_pub->publish(std::move(joint_pose_msg));
-
-      velocity_setpoint = 0.0;
-      last_linear_vel["x"] = 0.0;
-      last_linear_vel["y"] = 0.0;
-      last_angular_vel["yaw"] = 0.0;
-      auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
-      cmd_vel_pub->publish(std::move(cmd_vel_msg));
-      sent_disable_msg = true;
     }
   }
 }
