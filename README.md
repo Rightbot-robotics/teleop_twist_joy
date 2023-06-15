@@ -5,7 +5,9 @@ ros2/teleop_twist_joy
 The purpose of this package is to provide a generic facility for tele-operating Twist-based ROS2 robots with a standard joystick. 
 It converts joy messages to velocity commands.
 
-This node provides no rate limiting or autorepeat functionality. It is expected that you take advantage of the features built into [joy](https://index.ros.org/p/joy/github-ros-drivers-joystick_drivers/#foxy) for this.
+~~This node provides no rate limiting or autorepeat functionality. It is expected that you take advantage of the features built into [joy](https://index.ros.org/p/joy/github-ros-drivers-joystick_drivers/#foxy) for this.~~
+
+The new node uses [joy_linux](https://git.fh-muenster.de/ns926159/joystick_drivers/-/tree/ros2/joy_linux) node from the linked repositary. It is necessary that the `joy_linux` package is built and sourced in order to run teleop joy node.
 
 ## Executables
 The package comes with the `teleop_node` that republishes `sensor_msgs/msg/Joy` messages as scaled `geometry_msgs/msg/Twist` messages.

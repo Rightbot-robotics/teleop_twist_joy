@@ -21,9 +21,8 @@ def generate_launch_description():
             joy_config, launch.substitutions.TextSubstitution(text='.config.yaml')]),
 
         launch_ros.actions.Node(
-            package='joy', executable='joy_node', name='joy_node',
+            package='joy_linux', executable='joy_linux_node', name='joy_node',
             parameters=[{
-                'dev': joy_dev,
                 'deadzone': 0.3,
                 'autorepeat_rate': 20.0,
             }]),

@@ -17,6 +17,7 @@ find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(rightbot_interfaces REQUIRED)
+find_package(joy_linux REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED src/${PROJECT_NAME}.cpp)
 
@@ -34,6 +35,7 @@ ament_target_dependencies(${PROJECT_NAME}
   "rclcpp_components"
   "sensor_msgs"
   "rightbot_interfaces"
+  "joy_linux"
 )
 
 rclcpp_components_register_nodes(${PROJECT_NAME}
