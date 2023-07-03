@@ -823,8 +823,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
       resetErrors("wheel_2_drive", "RESET_FAULT");
       resetErrors("wheel_1_steer", "RESET_FAULT");
       resetErrors("wheel_2_steer", "RESET_FAULT");
-      resetErrors("wheel_1_steer", "RESET_COMMUNICATION");
-      resetErrors("wheel_2_steer", "RESET_COMMUNICATION");
+      resetErrors("ALL", "CONNECTION_RESET");
       last_error_reset_execution_time = joy_msg->header.stamp;
     }
 
