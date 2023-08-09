@@ -42,6 +42,8 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
 
 #include "teleop_twist_joy/teleop_twist_joy.hpp"
 
+#include <geometry_msgs/msg/twist_stamped.hpp>
+
 #define ROS_INFO_NAMED RCUTILS_LOG_INFO_NAMED
 #define ROS_INFO_COND_NAMED RCUTILS_LOG_INFO_EXPRESSION_NAMED
 
@@ -73,6 +75,9 @@ struct TeleopTwistJoy::Impl
   rclcpp::Client<rightbot_interfaces::srv::MotorRecovery>::SharedPtr error_reset_client;
   rclcpp::Client<rightbot_interfaces::srv::PositionControl>::SharedPtr pos_control_client;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_pose_pub;
+
+  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr twist_pub_;
+  // rclcpp::Publisher<control_msgs::msg::JointJog>::SharedPtr joint_pub_;
   
   // Obtain a reference to the underlying rcl_node_t structure
   rclcpp::Node::SharedPtr node;
@@ -91,7 +96,7 @@ struct TeleopTwistJoy::Impl
   int64_t next_joint_button;
 
   // Store current state
-  bool mode;
+  bool mode = true;
   bool gripper;
   bool sent_disable_msg;
   int64_t joint_index;
@@ -144,6 +149,9 @@ struct TeleopTwistJoy::Impl
   std::map<std::string, double> last_linear_vel;
   std::map<std::string, double> last_angular_vel;
   std::map<std::string, double> last_joint_pose;
+
+  bool translation_mode ;
+  bool mode_event ;
 };
 
 /**
@@ -177,6 +185,10 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   pimpl_->prev_joint_button = this->declare_parameter("prev_joint_button", 3);
   pimpl_->next_joint_button = this->declare_parameter("next_joint_button", 1);
 
+  pimpl_->twist_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>("/servo_node/delta_twist_cmds", 10);
+
+  pimpl_->translation_mode = true;
+  pimpl_->mode_event = false;
 
   std::map<std::string, int64_t> default_linear_map{
     {"x", 5L},
@@ -550,6 +562,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   };
 
   callback_handle = this->add_on_set_parameters_callback(param_callback);
+
 }
 
 TeleopTwistJoy::~TeleopTwistJoy()
@@ -652,6 +665,7 @@ void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr 
                                          const std::string& which_map)
 {
   // Initializes with zeros by default.
+  
   auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
 
   if(!require_enable_button ||
@@ -782,28 +796,62 @@ void TeleopTwistJoy::Impl::resetErrors(std::string motor_name, std::string funct
 
 void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy_msg)
 { 
+  
   if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_mode_execution_time)).seconds() >= 0.5)
   {
-    if (enable_mode_button >= 0 && 
-      static_cast<int>(joy_msg->buttons.size()) > enable_mode_button &&
-      joy_msg->buttons[enable_mode_button])
-    {
-      mode = !mode;
-      if (mode)
-      {
-        ROS_INFO_COND_NAMED(enable_mode_button > 0, "SherlockTeleopJoy",
-        "Controlling Sherlock manipulator now.");
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "TOTAL BUTTONS %d",static_cast<int>(joy_msg->buttons.size()));
+    
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "0 BUTTON %d",joy_msg->buttons[0]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "1 BUTTON %d",joy_msg->buttons[1]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "2 BUTTON %d",joy_msg->buttons[2]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "3 BUTTON %d",joy_msg->buttons[3]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "4 BUTTON %d",joy_msg->buttons[4]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "5 BUTTON %d",joy_msg->buttons[5]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "6 BUTTON %d",joy_msg->buttons[6]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "7 BUTTON %d",joy_msg->buttons[7]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "8 BUTTON %d",joy_msg->buttons[8]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "9 BUTTON %d",joy_msg->buttons[9]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "10 BUTTON %d",joy_msg->buttons[10]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "11 BUTTON %d",joy_msg->buttons[11]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "12 BUTTON %d",joy_msg->buttons[12]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "13 BUTTON %d",joy_msg->buttons[13]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "14 BUTTON %d",joy_msg->buttons[14]);
 
-        ROS_INFO_COND_NAMED(enable_gripper_button >= 0, "SherlockTeleopJoy",
-        "Gripper toggle button: A");
-      }
-      else
-      {
-        ROS_INFO_COND_NAMED(enable_mode_button > 0, "SherlockTeleopJoy",
-        "Controlling Sherlock base now.");
-      }
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "TOTAL AXIS %d",static_cast<int>(joy_msg->axes.size()));
+
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "0 AXES %f",joy_msg->axes[0]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "1 AXES %f",joy_msg->axes[1]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "2 AXES %f",joy_msg->axes[2]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "3 AXES %f",joy_msg->axes[3]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "4 AXES %f",joy_msg->axes[4]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "5 AXES %f",joy_msg->axes[5]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "6 AXES %f",joy_msg->axes[6]);
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "7 AXES %f",joy_msg->axes[7]);
+
+    // if (enable_mode_button >= 0 && 
+    //   static_cast<int>(joy_msg->buttons.size()) > enable_mode_button &&
+    //   joy_msg->buttons[enable_mode_button])
+    // {
+     
+    //   mode = !mode;
+    //   ROS_INFO_NAMED("SherlockTeleopJoy", "check mode ");
+    //   if (mode)
+    //   {
+    //     ROS_INFO_NAMED("SherlockTeleopJoy", "mode true");
+    //     ROS_INFO_COND_NAMED(enable_mode_button > 0, "SherlockTeleopJoy",
+    //     "Controlling Sherlock manipulator now.");
+
+    //     ROS_INFO_COND_NAMED(enable_gripper_button >= 0, "SherlockTeleopJoy",
+    //     "Gripper toggle button: A");
+    //   }
+    //   else
+    //   {
+    //     ROS_INFO_NAMED("SherlockTeleopJoy", "mode false");
+    //     ROS_INFO_COND_NAMED(enable_mode_button > 0, "SherlockTeleopJoy",
+    //     "Controlling Sherlock base now.");
+    //   }
         
-    }
+    // }
 
   last_mode_execution_time = joy_msg->header.stamp;
 
@@ -811,12 +859,12 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
   
   if(!mode)
   {
-    
   
   if (error_reset_button > 0 && 
     static_cast<int>(joy_msg->buttons.size()) > error_reset_button &&
     joy_msg->buttons[error_reset_button])
   {
+    
     if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_error_reset_execution_time)).seconds() >= 0.5)
       {
       resetErrors("wheel_1_drive", "RESET_FAULT");
@@ -914,121 +962,64 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
   }
   else
   {
+    // ROS_INFO_NAMED("SherlockTeleopJoy", "Controlling Sherlock manipulator now");
     // get X/B to choose joint and send apt joint_name
-    if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_prev_joint_execution_time)).seconds() >= 0.5)
-    {
-  
-      if (prev_joint_button >= 0 && 
-        static_cast<int>(joy_msg->buttons.size()) > prev_joint_button &&
-        joy_msg->buttons[prev_joint_button])
-      { 
-        if(joint_index == 0)
-        {
-          joint_index = static_cast<int>(joint_names.size()) - 1;
-        }
-        else
-        {
-          --joint_index;
-        }
-        const std::string joint = joint_names[joint_index];
-        ROS_INFO_COND_NAMED(prev_joint_button > 0, "SherlockTeleopJoy",
-        ("Now controlling joint: " + joint).c_str());
-      }
-
-      last_prev_joint_execution_time = joy_msg->header.stamp;
-    }
-
-    if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_next_joint_execution_time)).seconds() >= 0.5)
-    {
-  
-      if (next_joint_button >= 0 && 
-        static_cast<int>(joy_msg->buttons.size()) > next_joint_button &&
-        joy_msg->buttons[next_joint_button])
-      { 
-         if(joint_index == static_cast<int>(joint_names.size()) - 1)
-        {
-          joint_index = 0;
-        }
-        else
-        {
-          ++joint_index;
-        }
-        const std::string joint = joint_names[joint_index];
-        ROS_INFO_COND_NAMED(next_joint_button > 0, "SherlockTeleopJoy",
-        ("Now controlling joint: " + joint).c_str());
-      }
-
-      last_next_joint_execution_time = joy_msg->header.stamp;
-    }
 
     // get A button as toggle switch to send bool gripper command
-    if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_gripper_execution_time)).seconds() >= 0.5)
+
+    auto twist_msg = std::make_unique<geometry_msgs::msg::TwistStamped>();
+
+    if ((to_rclcpp_time(joy_msg->header.stamp) - to_rclcpp_time(last_gripper_execution_time)).seconds() >= 0.05)
     {
-  
-      if (enable_gripper_button >= 0 && 
-          static_cast<int>(joy_msg->buttons.size()) > enable_gripper_button &&
-          joy_msg->buttons[enable_gripper_button])
-      {
-          gripper = !gripper;
-          if (gripper)
-          {
-            ROS_INFO_COND_NAMED(enable_gripper_button > 0, "SherlockTeleopJoy",
-            "Gripper ON.");
-          }
-          else
-          {
-            ROS_INFO_COND_NAMED(enable_gripper_button > 0, "SherlockTeleopJoy",
-            "Gripper OFF.");
-          } 
+
+      double y_value = joy_msg->axes[2];
+      double x_value = joy_msg->axes[3];
+      double z_value = joy_msg->axes[1];
+
+      int movement_mode_key = joy_msg->buttons[6]; // 0 for translation, 1 for rotation
+      
+      if(movement_mode_key == 1){
+        mode_event = true;
       }
+      if(mode_event){
+        if(movement_mode_key == 0){
+          translation_mode = !translation_mode;
+          if(translation_mode){
+            ROS_INFO_NAMED("SherlockTeleopJoy","translation mode");
+          } else {
+            ROS_INFO_NAMED("SherlockTeleopJoy","rotation mode");
+          }
+          mode_event = false;
+        }
+      }
+
+      if(translation_mode){
+        // ROS_INFO_NAMED("SherlockTeleopJoy", "linear x %f y %f z %f", x_value, y_value, z_value);
+
+        twist_msg->twist.linear.x = x_value;
+        twist_msg->twist.linear.y = y_value;
+        twist_msg->twist.linear.z = z_value;
+
+      } else {
+
+        // ROS_INFO_NAMED("SherlockTeleopJoy", "angular x %f y %f z %f", x_value, y_value, z_value);
+
+        twist_msg->twist.angular.x = x_value;
+        twist_msg->twist.angular.y = y_value;
+        twist_msg->twist.angular.z = z_value;
+
+      }
+
+      twist_msg->header.stamp = node->now();
+      twist_msg->header.frame_id = "base_link";
+
+      twist_pub_->publish(std::move(twist_msg));
 
     last_gripper_execution_time = joy_msg->header.stamp;
 
     }
 
-    if (enable_turbo_button >= 0 &&
-        static_cast<int>(joy_msg->buttons.size()) > enable_turbo_button &&
-        joy_msg->buttons[enable_turbo_button] && 
-        (!require_enable_button || 
-          (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
-          joy_msg->buttons[enable_button])))
-    {
-      sendJointPoseMsg(joy_msg, "turbo", joint_names[joint_index], gripper);
-    }
-    else if (!require_enable_button ||
-      (static_cast<int>(joy_msg->buttons.size()) > enable_button &&
-            joy_msg->buttons[enable_button]))
-    {
-      sendJointPoseMsg(joy_msg, "normal", joint_names[joint_index], gripper);
-    }
-    else
-    {
-      // When enable button is unpressed, send no-motion commands
-      // in order to stop the manipulator.
-
-      // Initializes with zeros by default.
-      last_joy_time = joy_msg->header.stamp;
-      auto joint_pose_msg = std::make_unique<sensor_msgs::msg::JointState>();
-
-      joint_pose_msg->header.stamp = joy_msg->header.stamp;
-      joint_pose_msg->name = joint_names;
-      joint_pose_msg->position = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-      std::map<std::string, double>::iterator it;
-      for(it = last_joint_pose.begin(); it != last_joint_pose.end(); it++)
-      { 
-        ptrdiff_t pos = distance(joint_names.begin(), find(joint_names.begin(), joint_names.end(), it->first));
-        joint_pose_msg->position[pos] = it->second;
-      }
-      joint_pose_pub->publish(std::move(joint_pose_msg));
-
-      velocity_setpoint = 0.0;
-      last_linear_vel["x"] = 0.0;
-      last_linear_vel["y"] = 0.0;
-      last_angular_vel["yaw"] = 0.0;
-      auto cmd_vel_msg = std::make_unique<geometry_msgs::msg::Twist>();
-      cmd_vel_pub->publish(std::move(cmd_vel_msg));
-      sent_disable_msg = true;
-    }
+    
   }
 }
 
