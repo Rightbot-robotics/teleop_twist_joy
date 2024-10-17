@@ -19,7 +19,7 @@ teleop_twist_joy_node:
       x: 7
       y: 6
 
-    scale_pos: 0.22                            # Metre(s)
+    scale_pos: 0.22                           # Metre(s)
 
     axis_joint:
       x: 1                                    # Left thumbstick vertical
@@ -36,6 +36,7 @@ teleop_twist_joy_node:
     prev_joint_button: 3                      # X button
     next_joint_button: 1                      # B button
     cmd_vel_topic: "cmd_vel"                  # Default: "cmd_vel"
+    joy_topic: "joy"                          # Default: "joy"
     linear_acceleration_limit: 0.2
     linear_deceleration_limit: 0.2
     angular_acceleration_limit: 0.15
@@ -52,6 +53,7 @@ teleop_twist_joy_node:
     #   "rotation2_joint"       : [ -3.14, 3.14  ]
     #   "v_gantry_joint"        : [   0.0, 1.061 ]
     #   "wrist_rotation_joint"  : [ -3.14, 3.14  ]
+
     joint_names: [
       "h_gantry_joint"        ,     
       "elbow_rotation_joint"  , 

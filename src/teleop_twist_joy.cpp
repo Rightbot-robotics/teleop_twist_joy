@@ -79,6 +79,7 @@ struct TeleopTwistJoy::Impl
   bool require_enable_button;
 
   std::string cmd_vel_topic;
+  std::string joy_topic;
 
   // Store all buttons
   int64_t error_reset_button;
@@ -154,7 +155,9 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   pimpl_ = new Impl;
 
   pimpl_->node = std::shared_ptr<rclcpp::Node>(this);
-  pimpl_->joy_sub = this->create_subscription<sensor_msgs::msg::Joy>("joy", rclcpp::QoS(10),
+  pimpl_->joy_topic = this->declare_parameter("joy_topic", "joy");
+  this->get_parameter("joy_topic", pimpl_->joy_topic);
+  pimpl_->joy_sub = this->create_subscription<sensor_msgs::msg::Joy>(this->pimpl_->joy_topic, rclcpp::QoS(10),
     std::bind(&TeleopTwistJoy::Impl::joyCallback, this->pimpl_, std::placeholders::_1));
 
   // pimpl_->cmd_pos_pub = this->create_publisher<geometry_msgs::msg::Point>("cmd_pos", 10);
