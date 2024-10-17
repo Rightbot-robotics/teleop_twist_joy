@@ -15,86 +15,16 @@ teleop_twist_joy_node:
     scale_angular:
       yaw: 0.3
 
-    pos_linear:                               # D-Pad buttons to move in pose mode
-      x: 7
-      y: 6
-
-    scale_pos: 0.22                           # Metre(s)
-
-    axis_joint:
-      x: 1                                    # Left thumbstick vertical
-    scale_joint: 
-      x: 0.8
-    scale_joint_turbo:
-      x: 1.0
-
-    error_reset_button: 1                     # B button
-    enable_button: 7                          # RB shoulder button
-    enable_turbo_button: 6                    # LB shoulder button
-    enable_mode_button: 12                    # XBOX logo button
-    enable_gripper_button: 0                  # A button
-    prev_joint_button: 3                      # X button
-    next_joint_button: 1                      # B button
     cmd_vel_topic: "cmd_vel"                  # Default: "cmd_vel"
     joy_topic: "joy"                          # Default: "joy"
     linear_acceleration_limit: 0.2
     linear_deceleration_limit: 0.2
     angular_acceleration_limit: 0.15
     angular_deceleration_limit: 0.15
-    joint_velocity_limit: 0.4
 
-    # joints: 
-    #   # NAMES                       MIN, MAX
-    #   "base_rotation_joint"   : [ -3.14, 3.14  ]
-    #   "camera_rotation_joint" : [ -3.14, 3.14  ]
-    #   "elbow_rotation_joint"  : [ -2.61, 2.61  ] 
-    #   "h_gantry_joint"        : [   0.0, 0.75  ]
-    #   "rotation1_joint"       : [ -1.57, 1.57  ]
-    #   "rotation2_joint"       : [ -3.14, 3.14  ]
-    #   "v_gantry_joint"        : [   0.0, 1.061 ]
-    #   "wrist_rotation_joint"  : [ -3.14, 3.14  ]
+    side_conveyor_button: 1                   # B button
+    back_conveyor_button: 0                   # A button
 
-    joint_names: [
-      "h_gantry_joint"        ,     
-      "elbow_rotation_joint"  , 
-      "wrist_rotation_joint"  ,
-      "front_swerve_joint"    ,
-      "base_rotation_joint"   ,
-      "rotation2_joint"       ,
-      "front_hub_joint"       ,      
-      "v_gantry_joint"        ,       
-      "camera_rotation_joint" ,
-      "rear_swerve_joint"     ,
-      "rotation1_joint"       ,
-      "rear_hub_joint"        ,     
-    ]
-
-    joint_limits_min: [
-      0.0,
-      -2.61,
-      -3.14,
-      0.0 , #-3.14,
-      -3.14,
-      -3.14,
-      0.0,
-      0.0,
-      -3.14,
-      0.0 , #-3.14,
-      -1.57,
-      0.0
-    ]
-
-    joint_limits_max: [
-      0.75,
-      2.61,
-      3.14,
-      0.0 , #3.14,
-      3.14,
-      3.14,
-      0.0,
-      1.061,
-      3.14,
-      0.0 , #3.14,
-      1.57,
-      0.0
-    ]
+    error_reset_button: 2                     # DISABLED
+    enable_button: 4                          # RT shoulder trigger AXIS NOT BUTTON
+    enable_turbo_button: 6                    # LB shoulder button
