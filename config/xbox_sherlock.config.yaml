@@ -22,9 +22,16 @@ teleop_twist_joy_node:
     angular_acceleration_limit: 0.15
     angular_deceleration_limit: 0.15
 
-    side_conveyor_button: 1                   # B button
-    back_conveyor_button: 0                   # A button
-
-    error_reset_button: 2                     # DISABLED
     enable_button: 4                          # RT shoulder trigger AXIS NOT BUTTON
     enable_turbo_button: 6                    # LB shoulder button
+    
+    conveyor_right_button: 1                  # B button
+    conveyor_left_button: 3                   # X button
+    conveyor_front_button: 4                  # Y button
+    conveyor_back_button: 0                   # A button
+    conveyor_all_button: 2                    # 
+    
+    conveyor_right_vel: 0.27
+    conveyor_left_vel: -0.27
+    conveyor_back_vel: 1.6
+    conveyor_front_vel: 0.42
