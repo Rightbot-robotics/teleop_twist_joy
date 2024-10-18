@@ -452,10 +452,10 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
       this->pimpl_->conveyor_name_map[this->pimpl_->conveyor_front_button] = {"conveyor_front"};
       this->pimpl_->conveyor_name_map[this->pimpl_->conveyor_back_button] = {"conveyor_rear"};
       this->pimpl_->conveyor_name_map[this->pimpl_->conveyor_all_button] = {"conveyor_front", "conveyor_rear", "conveyor_left", "conveyor_right"};
-      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_right_button] = {this->pimpl_->conveyor_right_vel};
-      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_left_button] = {this->pimpl_->conveyor_left_vel};
-      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_front_button] = {this->pimpl_->conveyor_front_vel};
-      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_back_button] = {this->pimpl_->conveyor_back_vel};
+      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_right_button] = {0.0, 0.0, 0.0, this->pimpl_->conveyor_right_vel};
+      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_left_button] = {0.0, 0.0, this->pimpl_->conveyor_left_vel, 0.0};
+      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_front_button] = {this->pimpl_->conveyor_front_vel, 0.0, 0.0, 0.0};
+      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_back_button] = {0.0, this->pimpl_->conveyor_back_vel, 0.0, 0.0};
       this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_all_button] = {this->pimpl_->conveyor_front_vel, this->pimpl_->conveyor_back_vel, this->pimpl_->conveyor_left_vel, this->pimpl_->conveyor_right_vel};
       this->pimpl_->conveyor_last_button_map[this->pimpl_->conveyor_right_button] = false;
       this->pimpl_->conveyor_last_button_map[this->pimpl_->conveyor_left_button] = false;
@@ -600,7 +600,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
     if (!conveyor_last_button_map[conveyor_right_button])
     sendConveyorRequest(conveyor_name_map[conveyor_right_button], conveyor_vel_map[conveyor_right_button]);
     else
-    sendConveyorRequest(conveyor_name_map[conveyor_right_button], std::vector<double>{1, 0.0});
+    sendConveyorRequest(conveyor_name_map[conveyor_right_button], std::vector<double>{4, 0.0});
     conveyor_last_button_map[conveyor_right_button] = !conveyor_last_button_map[conveyor_right_button];
   }
   if ((joy_msg->axes[enable_button] < 0.0) && joy_msg->buttons[conveyor_left_button] > 0)
@@ -608,7 +608,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
     if (!conveyor_last_button_map[conveyor_left_button])
     sendConveyorRequest(conveyor_name_map[conveyor_left_button], conveyor_vel_map[conveyor_left_button]);
     else
-    sendConveyorRequest(conveyor_name_map[conveyor_left_button], std::vector<double>{1, 0.0});
+    sendConveyorRequest(conveyor_name_map[conveyor_left_button], std::vector<double>{4, 0.0});
     conveyor_last_button_map[conveyor_left_button] = !conveyor_last_button_map[conveyor_left_button];
   }
   if ((joy_msg->axes[enable_button] < 0.0) && joy_msg->buttons[conveyor_front_button] > 0)
@@ -616,7 +616,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
     if (!conveyor_last_button_map[conveyor_front_button])
     sendConveyorRequest(conveyor_name_map[conveyor_front_button], conveyor_vel_map[conveyor_front_button]);
     else
-    sendConveyorRequest(conveyor_name_map[conveyor_front_button], std::vector<double>{1, 0.0});
+    sendConveyorRequest(conveyor_name_map[conveyor_front_button], std::vector<double>{4, 0.0});
     conveyor_last_button_map[conveyor_front_button] = !conveyor_last_button_map[conveyor_front_button];
   }
   if ((joy_msg->axes[enable_button] < 0.0) && joy_msg->buttons[conveyor_back_button] > 0)
@@ -624,7 +624,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
     if (!conveyor_last_button_map[conveyor_back_button])
     sendConveyorRequest(conveyor_name_map[conveyor_back_button], conveyor_vel_map[conveyor_back_button]);
     else
-    sendConveyorRequest(conveyor_name_map[conveyor_back_button], std::vector<double>{1, 0.0});
+    sendConveyorRequest(conveyor_name_map[conveyor_back_button], std::vector<double>{4, 0.0});
     conveyor_last_button_map[conveyor_back_button] = !conveyor_last_button_map[conveyor_back_button];;
   }
 
