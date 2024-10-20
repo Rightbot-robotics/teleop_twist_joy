@@ -86,10 +86,8 @@ struct TeleopTwistJoy::Impl
   double conveyor_front_button;
   double conveyor_back_button;
   double conveyor_all_button;
+  double conveyor_dir_button;
 
-  std::map<int, std::vector<double>> conveyor_vel_map;
-  // std::map<int, std::vector<std::string>> conveyor_name_map;
-  std::map<int, bool> conveyor_last_button_map;
   // Store all axes and their scales
   std::map<std::string, int64_t> axis_linear_map;
   std::map<std::string, std::map<std::string, double>> scale_linear_map;
@@ -110,6 +108,8 @@ struct TeleopTwistJoy::Impl
   double conveyor_back_vel;
   double conveyor_all_vel;
 
+  double conveyor_dir_multiplier = 1.0;
+
   double last_conveyor_right_vel;
   double last_conveyor_left_vel;
   double last_conveyor_front_vel;
@@ -122,9 +122,6 @@ struct TeleopTwistJoy::Impl
   rclcpp::Time last_joy_time;
 
   // Store prev state 
-  double last_joy_val_x;
-  double last_joy_val_y;
-  double last_joy_val_yaw;
 
   bool sent_disable_msg;
 
@@ -167,6 +164,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
   pimpl_->conveyor_front_button = this->declare_parameter("conveyor_front_button", 4);
   pimpl_->conveyor_back_button = this->declare_parameter("conveyor_back_button", 0);
   pimpl_->conveyor_all_button = this->declare_parameter("conveyor_all_button", 6);
+  pimpl_->conveyor_dir_button = this->declare_parameter("conveyor_dir_button", 7);
 
   pimpl_->conveyor_right_vel = this->declare_parameter("conveyor_right_vel", 0.5);
   pimpl_->conveyor_left_vel = this->declare_parameter("conveyor_left_vel", 0.5);
@@ -248,6 +246,9 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
 
   ROS_INFO_COND_NAMED(pimpl_->conveyor_all_button >= 0, "SherlockTeleopJoy",
     "Conveyor all toggle: D-Pad Left");
+  
+  ROS_INFO_COND_NAMED(pimpl_->conveyor_dir_button >= 0, "SherlockTeleopJoy",
+    "Conveyor dir toggle: D-Pad Front & Back");
 
   ROS_INFO_COND_NAMED(pimpl_->require_enable_button, "SherlockTeleopJoy",
     "X/Y vel control: Left stick");
@@ -269,7 +270,7 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
                                                   "scale_linear_turbo.x", "scale_linear_turbo.y", "scale_linear_turbo.z", "enable_button",
                                                   "scale_angular.yaw", "scale_angular.pitch", "scale_angular.roll",
                                                   "scale_angular_turbo.yaw", "scale_angular_turbo.pitch", "scale_angular_turbo.roll",
-                                                  "linear_acceleration_limit", "linear_deceleration_limit",
+                                                  "linear_acceleration_limit", "linear_deceleration_limit", "conveyor_dir_button",
                                                   "angular_acceleration_limit", "angular_deceleration_limit", "conveyor_all_button",
                                                   "conveyor_right_vel", "conveyor_left_vel", "conveyor_front_vel", "conveyor_back_vel"};
       
@@ -339,6 +340,10 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
         if (parameter.get_name() == "conveyor_all_button")
         {
           this->pimpl_->conveyor_all_button = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
+        }
+        if (parameter.get_name() == "conveyor_dir_button")
+        {
+          this->pimpl_->conveyor_dir_button = parameter.get_value<rclcpp::PARAMETER_DOUBLE>();
         }
         if (parameter.get_name() == "conveyor_front_vel")
         {
@@ -454,37 +459,10 @@ TeleopTwistJoy::TeleopTwistJoy(const rclcpp::NodeOptions& options) : Node("teleo
         }
       }
       this->pimpl_->velocity_setpoint = 0.0;
-      // this->pimpl_->conveyor_name_map[this->pimpl_->conveyor_right_button] = {"conveyor_right"};
-      // this->pimpl_->conveyor_name_map[this->pimpl_->conveyor_left_button] = {"conveyor_left"};
-      // this->pimpl_->conveyor_name_map[this->pimpl_->conveyor_front_button] = {"conveyor_front"};
-      // this->pimpl_->conveyor_name_map[this->pimpl_->conveyor_back_button] = {"conveyor_rear"};
-      // this->pimpl_->conveyor_name_map[this->pimpl_->conveyor_all_button] = {"conveyor_front", "conveyor_rear", "conveyor_left", "conveyor_right"};
-      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_right_button] = {0.0, 0.0, 0.0, this->pimpl_->conveyor_right_vel};
-      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_left_button] = {0.0, 0.0, this->pimpl_->conveyor_left_vel, 0.0};
-      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_front_button] = {this->pimpl_->conveyor_front_vel, 0.0, 0.0, 0.0};
-      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_back_button] = {0.0, this->pimpl_->conveyor_back_vel, 0.0, 0.0};
-      this->pimpl_->conveyor_vel_map[this->pimpl_->conveyor_all_button] = {this->pimpl_->conveyor_front_vel, this->pimpl_->conveyor_back_vel, this->pimpl_->conveyor_left_vel, this->pimpl_->conveyor_right_vel};
-      this->pimpl_->conveyor_last_button_map[this->pimpl_->conveyor_right_button] = false;
-      this->pimpl_->conveyor_last_button_map[this->pimpl_->conveyor_left_button] = false;
-      this->pimpl_->conveyor_last_button_map[this->pimpl_->conveyor_front_button] = false;
-      this->pimpl_->conveyor_last_button_map[this->pimpl_->conveyor_back_button] = false;
-      this->pimpl_->conveyor_last_button_map[this->pimpl_->conveyor_all_button] = false;
+
       return result;
     };
     callback_handle = this->add_on_set_parameters_callback(param_callback);
-  ROS_INFO_COND_NAMED(true, "SherlockTeleopJoy", "helloooooo");
-  for (const auto& entry : pimpl_->conveyor_vel_map) {
-      std::ostringstream oss;
-      oss << "Conveyor " << entry.first << ": Velocities = ";
-
-      for (double vel : entry.second) {
-          oss << vel << " ";
-      }
-
-      // Log the message using ROS_INFO_COND_NAMED
-      ROS_INFO_COND_NAMED(true, "SherlockTeleopJoy",
-          "%s", oss.str().c_str());
-  }
   };
 
 
@@ -571,41 +549,6 @@ void TeleopTwistJoy::Impl::sendCmdVelMsg(const sensor_msgs::msg::Joy::SharedPtr 
   }
 }
 
-// void TeleopTwistJoy::Impl::sendConveyorRequest(std::vector<std::string> conveyor_names, std::vector<double> conveyor_velocity)
-// {
-//   while (!conveyor_belt_client->wait_for_service(std::chrono::seconds(1))) 
-//   {
-//     if (!rclcpp::ok())
-//     {
-//       ROS_INFO_NAMED("SherlockTeleopJoy", "Interrupted while waiting for /conveyor_belt_command service. Exiting.");
-//       return;
-//     }
-//     ROS_INFO_NAMED("SherlockTeleopJoy", "Waiting for /conveyor_belt_command service to appear...");
-//   }
-//   auto request = std::make_shared<rightbot_interfaces::srv::ConveyorBeltCommand::Request>();
-
-
-//   request->actuator_name = conveyor_names;
-//   request->actuator_velocity = conveyor_velocity;
-
-//   ROS_INFO_COND_NAMED(true, "SherlockTeleopJoy",
-//       "Sending Conveyor belt command.");
-//   auto future = conveyor_belt_client->async_send_request(request);
-  
-//   ROS_INFO_COND_NAMED(true, "SherlockTeleopJoy",
-//       "Sent Conveyor belt command.");
-//   auto result = future.get();
-
-//   if (!result->success)
-//   {
-//     ROS_INFO_NAMED("SherlockTeleopJoy", "Unable to send conveyor command. Error: %s", result->msg.c_str());
-//   } else
-//   {
-//     ROS_INFO_NAMED("SherlockTeleopJoy",
-//     "Successfully sent conveyor command.");
-//   }
-// }
-
 void TeleopTwistJoy::Impl::sendConveyorRequest(std::vector<double> conveyor_velocity)
 {
     // Print the conveyor_names and conveyor_velocity input data directly
@@ -663,28 +606,34 @@ void TeleopTwistJoy::Impl::sendConveyorRequest(std::vector<double> conveyor_velo
 
 void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr joy_msg)
 { 
+  if (joy_msg->axes[conveyor_dir_button] >= 0.5) {
+    conveyor_dir_multiplier = -0.5;
+  }
+  else if (joy_msg->axes[conveyor_dir_button] <= -0.5) {
+    conveyor_dir_multiplier = 1.0;
+  }
   if ((joy_msg->axes[enable_button] < 0.0) && joy_msg->axes[conveyor_all_button] > 0)
   { 
     if (!last_conveyor_all_button){
-    sendConveyorRequest(std::vector<double>{0.42, 1.6, -0.27, 0.27});
-    last_conveyor_right_vel = 0.27;
-    last_conveyor_left_vel = -0.27;
-    last_conveyor_back_vel = 1.6;
-    last_conveyor_front_vel = 0.42;
+    last_conveyor_right_vel = conveyor_right_vel;
+    last_conveyor_left_vel =  conveyor_left_vel;
+    last_conveyor_back_vel =  conveyor_back_vel*conveyor_dir_multiplier;
+    last_conveyor_front_vel = conveyor_front_vel*conveyor_dir_multiplier;
+    sendConveyorRequest(std::vector<double>{last_conveyor_front_vel, last_conveyor_back_vel, last_conveyor_left_vel, last_conveyor_right_vel});
     }
     else {
-    sendConveyorRequest(std::vector<double>{0.0, 0.0, 0.0, 0.0});
     last_conveyor_right_vel = 0.0;
     last_conveyor_left_vel  = 0.0;
     last_conveyor_back_vel  = 0.0;
     last_conveyor_front_vel = 0.0;
+    sendConveyorRequest(std::vector<double>{last_conveyor_front_vel, last_conveyor_back_vel, last_conveyor_left_vel, last_conveyor_right_vel});
     }
     last_conveyor_all_button = !last_conveyor_all_button;
   }
   if ((joy_msg->axes[enable_button] < 0.0) && joy_msg->buttons[conveyor_right_button] > 0)
   {
     if (!last_conveyor_right_button) {
-    last_conveyor_right_vel = 0.27;
+    last_conveyor_right_vel = conveyor_right_vel;
     sendConveyorRequest(std::vector<double>{last_conveyor_front_vel, last_conveyor_back_vel, last_conveyor_left_vel, last_conveyor_right_vel});
     }
     else {
@@ -696,7 +645,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
   if ((joy_msg->axes[enable_button] < 0.0) && joy_msg->buttons[conveyor_left_button] > 0)
   {
     if (!last_conveyor_left_button) {
-    last_conveyor_left_vel = -0.27;
+    last_conveyor_left_vel = conveyor_left_vel;
     sendConveyorRequest(std::vector<double>{last_conveyor_front_vel, last_conveyor_back_vel, last_conveyor_left_vel, last_conveyor_right_vel});
     }
     else{
@@ -708,7 +657,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
   if ((joy_msg->axes[enable_button] < 0.0) && joy_msg->buttons[conveyor_front_button] > 0)
   {
     if (!last_conveyor_front_button) {
-    last_conveyor_front_vel = 0.42;
+    last_conveyor_front_vel = conveyor_front_vel;
     sendConveyorRequest(std::vector<double>{last_conveyor_front_vel, last_conveyor_back_vel, last_conveyor_left_vel, last_conveyor_right_vel});
     }
     else {
@@ -720,7 +669,7 @@ void TeleopTwistJoy::Impl::joyCallback(const sensor_msgs::msg::Joy::SharedPtr jo
   if ((joy_msg->axes[enable_button] < 0.0) && joy_msg->buttons[conveyor_back_button] > 0)
   {
     if (!last_conveyor_back_button) {
-    last_conveyor_back_vel = 1.6;
+    last_conveyor_back_vel = conveyor_back_vel;
     sendConveyorRequest(std::vector<double>{last_conveyor_front_vel, last_conveyor_back_vel, last_conveyor_left_vel, last_conveyor_right_vel});
     }
     else {

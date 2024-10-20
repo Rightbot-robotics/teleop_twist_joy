@@ -30,8 +30,9 @@ teleop_twist_joy_node:
     conveyor_front_button: 4                  # Y button
     conveyor_back_button: 0                   # A button
     conveyor_all_button: 6                    # D-pad left
-    
+    conveyor_dir_button: 7                    # D-pad front and back
+
     conveyor_right_vel: 0.27
     conveyor_left_vel: -0.27
-    conveyor_back_vel: 1.6
+    conveyor_back_vel: 1.18
     conveyor_front_vel: 0.42
